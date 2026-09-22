@@ -76,6 +76,12 @@ Link your local repository to GitHub and push your work by running:
 ```
 git branch -M main
 git push -u origin main
+```
+
+If necessary
+```
+git commit --amend --reset-author -m "first commit"
+git push -u origin main --force
 
 ```
 
