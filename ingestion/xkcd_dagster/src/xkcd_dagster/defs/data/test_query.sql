@@ -1,0 +1,1 @@
+SELECT * FROM xkcd.raw_comics_v2 WHERE num = 277;
