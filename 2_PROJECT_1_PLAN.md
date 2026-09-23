@@ -1,4 +1,4 @@
-# Project 1 
+# Project 1
 
 ## Prepare enviroment for Data ingestion and Data Tranformation
 
@@ -15,13 +15,13 @@ source .venv/bin/activate
 ```
 uv pip install --upgrade pip
 
-uv pip install dagster 
+uv pip install dagster
     # The core data orchestrator framework used to define, schedule, and monitor your pipelines (assets, jobs, and execution graphs)
 
-uv pip install dagster-webserver 
+uv pip install dagster-webserver
     # Provides the local UI dashboard (dagster dev) so you can visually inspect assets, run manual triggers, and view logs
 
-uv pip install dbt-core 
+uv pip install dbt-core
     # The standard transformation engine that compiles and executes your SQL models using analytics engineering best practices (latest stable compatible version)
 
 uv pip install dbt-duckdb
@@ -41,14 +41,14 @@ uv pip install duckdb
 
 ```
 
-2. Save Your Dependencies (requirements.txt)
+3. Save Your Dependencies (requirements.txt)
 Save your environment state:
 
 ```
 uv pip freeze > requirements.txt
 ```
 
-3. Confirm version ofr DBT you need
+4. Confirm version ofr DBT you need
 
 ```
 dbt --version
@@ -60,6 +60,7 @@ dbt --version
 
 ### Design the folder structure
 
+```
 analytics-engineering/
 ├── .venv/                      # Python virtual environment (uv)
 ├── requirements.txt            # Locked dependencies
@@ -69,15 +70,16 @@ analytics-engineering/
 │   │   └── definitions.py      # Dagster entry point
 │   └── data/                   # Local DuckDB database file storage
 └── transformation_dbt/         # 2. DATA TRANSFORMATION (dbt project)
-    ├── models/                 
+    ├── models/
     │   ├── staging/            # Initial cleaning of ingested tables
     │   └── marts/              # Business intelligence & trend models (PDP)
-    ├── dbt_project.yml         
+    ├── dbt_project.yml
     └── profiles.yml            # DuckDB connection profile
+```
 
 ### Create the Ingestion Folder Structure
 
-Run these commands in your terminal from your root directory 
+Run these commands in your terminal from your root directory
 
 My example: (/home/maxantipev/analytics-engineering/)
 
@@ -93,7 +95,7 @@ Source: https://docs.dagster.io/getting-started/quickstart
 ```
 uvx create-dagster@latest project xkcd_dagster
 ```
-Respond y to the prompt to run uv sync after. 
+Respond y to the prompt to run uv sync after.
 
 ### Change to the "project_name" directory and activate enviroment
 
@@ -102,6 +104,7 @@ cd xkcd_dagster
 source .venv/bin/activate
 
 ```
+
 ### Install the required dependencies in the virtual environment
 
 ```
@@ -110,6 +113,7 @@ uv add duckdb
 ```
 Final structure is expected this:
 
+```
 ingestion/
 │   └── xkcd_dagster/
 │       ├── .dg/
@@ -120,11 +124,12 @@ ingestion/
 │       ├── pyproject.toml
 │       ├── README.md
 │       └── uv.lock
+```
 
 
 ### Create an assets file
 
-Software-defined assets are the primary building blocks in Dagster. 
+Software-defined assets are the primary building blocks in Dagster.
 They represent the underlying entities in our pipelines, such as database tables, machine learning models, or AI processes. Together, these assets form the data platform.
 
 Source: https://docs.dagster.io/dagster-basics-tutorial/assets
@@ -136,29 +141,33 @@ When building assets, the first step is to scaffold an assets file with the `dg`
 dg scaffold defs dagster.asset assets.py
 ```
 
-Creating a component at 
+Creating a component at
 ```
 <YOUR PATH>/dagster-tutorial/src/dagster_tutorial/defs/assets.py.
 ```
 
-Example: 
+Example:
 ```
 /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster/src/xkcd_dagster/defs/assets.py.
 ```
 
 This adds a file called assets.py to the dagster-tutorial module, which will contain your asset code. Using `dg` to create the file ensures it is placed where Dagster can automatically discover it:
 
+```
 src
 └── dagster_tutorial
     └── defs
         └── assets.py
+```
 
 My example:
 
+```
 src
 └── xkcd_dagster
     └── defs
         └── assets.py
+```
 
 
 ### Add data
@@ -168,7 +177,7 @@ As per official documentation, next is to create a `sample_data.csv` file. This 
 mkdir src/dagster_quickstart/defs/data && touch src/dagster_quickstart/defs/data/sample_data.csv
 ```
 
-My Example: 
+My Example:
 In this particular case we extract data from https://xkcd.com/info.0.json, where "0" can be different comic.
 
 ```
@@ -189,8 +198,8 @@ cp src/xkcd_dagster/defs/assets.py src/xkcd_dagster/defs/step_1_ingestion.py
 ### Define the asset
 As per official documentation,to define the assets for the ETL pipeline, you need to open src/dagster_quickstart/defs/assets.py file in your preferred editor and update the code.
 
-My Example: 
-In this particular case we 
+My Example:
+In this particular case we
 
 1. create copy of existed files and rename it
 
@@ -256,7 +265,7 @@ schema_config_v2.json
 V2 - version of schema, if at some point your ingestion failed due to schema drift
 
 
-5. Add data processing Python functions to 
+5. Add data processing Python functions to
 - test_ingestion.ipynb
 - step_1_ingestion.py
 
@@ -270,15 +279,10 @@ dg list defs
 
 Results:
 (xkcd-dagster) root@MSI:/home/maxantipev/analytics-engineering/ingestion/xkcd_dagster# dg list defs
-┏━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Section ┃ Definitions                                                 ┃
-┡━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Assets  │ ┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━┓ │
-│         │ ┃ Key              ┃ Group   ┃ Deps ┃ Kinds ┃ Description ┃ │
-│         │ ┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━┩ │
-│         │ │ step_1_ingestion │ default │      │       │             │ │
-│         │ └──────────────────┴─────────┴──────┴───────┴─────────────┘ │
-└─────────┴─────────────────────────────────────────────────────────────┘
+
+| Section | Key              | Group   | Deps | Kinds | Description |
+|---------|------------------|---------|------|-------|-------------|
+| Assets  | step_1_ingestion | default |      |       |             |
 
 
 7. You can also load and validate your Dagster definitions with dg check defs:
@@ -286,9 +290,11 @@ Results:
 dg check defs
 ```
 Result:
+```
 (xkcd-dagster) root@MSI:/home/maxantipev/analytics-engineering/ingestion/xkcd_dagster# dg check defs
 All component YAML validated successfully.
 All definitions loaded successfully.
+```
 
 8. Add schedule
 
@@ -312,8 +318,6 @@ def schedules(context: dg.ScheduleEvaluationContext) -> dg.RunRequest | dg.SkipR
     return dg.RunRequest()
 ```
 
-
-
 ### Run your pipeline
 In the terminal, navigate to your project's root directory and run:
 ```
@@ -328,8 +332,8 @@ Dagster UI overview: http://127.0.0.1:3000/overview/activity/timeline?groupBy=au
 In the top navigation, click the Assets tab, then click View lineage:
 
 How to run it:
-1. Click the checkbox next to step_1_ingestion.   
-2. Click the "Materialize selected" button near the top right.  
+1. Click the checkbox next to step_1_ingestion.
+2. Click the "Materialize selected" button near the top right.
 3. Watch the run kick off to fetch your XKCD data and create your local DuckDB database!
 
 
@@ -351,11 +355,21 @@ or create SQL file:
 SELECT * FROM xkcd.raw_comics_v2 WHERE num = 277;
 ```
 
+### Commit to github
 
+```
+cd /home/maxantipev/analytics-engineering/
+git status
+git status --ignored
+du -sh ingestion/xkcd_dagster/src/xkcd_dagster/defs/data/xkcd.duckdb
+find . -name ".gitignore"
+echo ".tmp_dagster_home_*" >> ingestion/xkcd_dagster/.gitignore
+git add .
+git commit -m "ingestion"
+
+```
 
 
 ## Preapre repository for Data transformation (dbt)
-
-
 
 ## Preapre for Data Ingestion
