@@ -1,0 +1,30 @@
+name: domain_data_products
+
+profile: domain_data_products
+
+seed-paths: ["seeds"]
+model-paths: ["models"]
+macro-paths: ["macros"]
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+seeds:
+  domain_data_products:
+    +schema: raw
+
+models:
+  domain_data_products:
+    +static_analysis: strict
+    
+    comics:
+      staging: {}
+      intermediate: {}
+      marts:
+        +schema: mart
+        
+    jaffle_shop:
+      staging:
+        +materialized: view
+      marts:
+        +materialized: table

@@ -3,7 +3,7 @@
   "columns": {
     "alt": "object",
     "day": "object",
-    "extra_parts": "object",
+    "extra_parts": "string",
     "img": "object",
     "link": "object",
     "month": "object",

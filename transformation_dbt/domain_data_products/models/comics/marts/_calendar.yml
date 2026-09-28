@@ -1,0 +1,276 @@
+version: 2
+
+models:
+  - name: calendar
+    description: >
+      Date dimension from 2006-01-01 through the current date.
+      One row per calendar day. Includes current-period anchors and YoY equivalents.
+    columns:
+      - name: _key_calendar
+        data_type: date
+        description: Calendar date. Primary key.
+        tests:
+          - not_null
+          - unique
+
+      - name: calendar_monthly_key
+        data_type: date
+        description: First day of the month for this date.
+
+      - name: date
+        data_type: date
+        description: Calendar date. Same as _key_calendar.
+
+      - name: past_future
+        data_type: string
+        description: >
+          Classifies each date as Past (date <= CURRENT_DATE()) or Future (date > CURRENT_DATE()).
+
+      - name: year
+        description: Calendar year number (e.g. 2024).
+
+      - name: year_month
+        data_type: string
+        description: ISO year-month string (YYYY-MM).
+
+      - name: day_of_week
+        data_type: string
+        description: Full day name (e.g. Monday).
+
+      - name: day_of_week_abbrv
+        data_type: string
+        description: Abbreviated day name (e.g. Mon).
+
+      - name: day_number_in_month
+        description: Day of the month (1–31).
+
+      - name: day_number_in_week
+        description: ISO day of the week for the previous day (used for week boundary alignment).
+
+      - name: week
+        description: ISO week number (1–53).
+
+      - name: week_start
+        data_type: date
+        description: Monday of the ISO week containing this date.
+
+      - name: week_end
+        data_type: date
+        description: Sunday of the ISO week containing this date.
+
+      - name: month_number
+        description: Month number (1–12).
+
+      - name: month
+        data_type: string
+        description: Full month name (e.g. January).
+
+      - name: month_abbrv
+        data_type: string
+        description: Abbreviated month name (e.g. Jan).
+
+      - name: month_year
+        data_type: string
+        description: Month and year label (e.g. Jan 2024).
+
+      - name: month_start
+        data_type: date
+        description: First day of the month.
+
+      - name: month_end
+        data_type: date
+        description: Last day of the month.
+
+      - name: quarter_number
+        description: Quarter number (1–4).
+
+      - name: quarter_start
+        data_type: date
+        description: First day of the quarter.
+
+      - name: quarter_end
+        data_type: date
+        description: Last day of the quarter.
+
+      - name: year_start
+        data_type: date
+        description: First day of the calendar year.
+
+      - name: year_end
+        data_type: date
+        description: Last day of the calendar year.
+
+      - name: last_week_date
+        description: ISO week number of the same day one week prior.
+
+      - name: last_week_start
+        data_type: date
+        description: Monday of the previous ISO week.
+
+      - name: last_week_end
+        data_type: date
+        description: Sunday of the previous ISO week.
+
+      - name: last_month_date
+        data_type: date
+        description: Same day one month prior.
+
+      - name: last_month_start
+        data_type: date
+        description: First day of the previous month.
+
+      - name: last_month_end
+        data_type: date
+        description: Last day of the previous month.
+
+      - name: last_quarter_date
+        data_type: date
+        description: Same day one quarter prior.
+
+      - name: last_quarter_start
+        data_type: date
+        description: First day of the previous quarter.
+
+      - name: last_quarter_end
+        data_type: date
+        description: Last day of the previous quarter.
+
+      - name: last_year_date
+        data_type: date
+        description: Same day 12 months prior.
+
+      - name: last_year_week_start
+        data_type: date
+        description: Monday of the ISO week containing last_year_date.
+
+      - name: last_year_week_end
+        data_type: date
+        description: Sunday of the ISO week containing last_year_date.
+
+      - name: last_year_month_start
+        data_type: date
+        description: First day of the month 12 months prior.
+
+      - name: last_year_month_end
+        data_type: date
+        description: Last day of the month 12 months prior.
+
+      - name: last_year_quarter_start
+        data_type: date
+        description: First day of the quarter 12 months prior.
+
+      - name: last_year_quarter_end
+        data_type: date
+        description: Last day of the quarter 12 months prior.
+
+      - name: last_year_year_start
+        data_type: date
+        description: Jan 1 of the year 12 months prior.
+
+      - name: last_year_year_end
+        data_type: date
+        description: Dec 31 of the year 12 months prior.
+
+      - name: current_year_today
+        data_type: date
+        description: CURRENT_DATE() — same value on every row; used as a filter anchor.
+
+      - name: current_year_yesterday
+        data_type: date
+        description: CURRENT_DATE() - 1 day.
+
+      - name: current_year_week_start
+        data_type: date
+        description: Monday of the current ISO week.
+
+      - name: current_year_week_end
+        data_type: date
+        description: Sunday of the current ISO week.
+
+      - name: current_year_month_start
+        data_type: date
+        description: First day of the current month.
+
+      - name: current_year_month_end
+        data_type: date
+        description: Last day of the current month.
+
+      - name: current_year_quarter_start
+        data_type: date
+        description: First day of the current quarter.
+
+      - name: current_year_quarter_end
+        data_type: date
+        description: Last day of the current quarter.
+
+      - name: current_year_year_start
+        data_type: date
+        description: Jan 1 of the current year.
+
+      - name: current_year_year_end
+        data_type: date
+        description: Dec 31 of the current year.
+
+      - name: current_year_last_week_start
+        data_type: date
+        description: Monday of the week prior to the current week.
+
+      - name: current_year_last_week_end
+        data_type: date
+        description: Sunday of the week prior to the current week.
+
+      - name: current_year_last_month_start
+        data_type: date
+        description: First day of the month prior to the current month.
+
+      - name: current_year_last_month_end
+        data_type: date
+        description: Last day of the month prior to the current month.
+
+      - name: current_year_last_quarter_start
+        data_type: date
+        description: First day of the quarter prior to the current quarter.
+
+      - name: current_year_last_quarter_end
+        data_type: date
+        description: Last day of the quarter prior to the current quarter.
+
+      - name: current_year_today_in_last_year
+        data_type: date
+        description: Today's date shifted 12 months back. Used for YoY comparisons.
+
+      - name: current_year_yesterday_in_last_year
+        data_type: date
+        description: Yesterday's date shifted 12 months back.
+
+      - name: current_year_week_start_in_last_year
+        data_type: date
+        description: Monday of the current week shifted 12 months back.
+
+      - name: current_year_week_end_in_last_year
+        data_type: date
+        description: Sunday of the current week shifted 12 months back.
+
+      - name: current_year_month_start_in_last_year
+        data_type: date
+        description: First day of the current month shifted 12 months back.
+
+      - name: current_year_month_end_in_last_year
+        data_type: date
+        description: Last day of the current month shifted 12 months back.
+
+      - name: current_year_quarter_start_in_last_year
+        data_type: date
+        description: First day of the current quarter shifted 12 months back.
+
+      - name: current_year_quarter_end_in_last_year
+        data_type: date
+        description: Last day of the current quarter shifted 12 months back.
+
+      - name: current_year_year_start_in_last_year
+        data_type: date
+        description: Jan 1 of the year 12 months prior to the current year.
+
+      - name: current_year_year_end_in_last_year
+        data_type: date
+        description: Dec 31 of the year 12 months prior to the current year.

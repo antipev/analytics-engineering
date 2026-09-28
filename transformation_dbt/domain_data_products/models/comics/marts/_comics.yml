@@ -1,0 +1,114 @@
+version: 2
+
+models:
+  - name: comics
+    description: >
+      Incremental mart of XKCD comics, one row per comic, with derived
+      publication date, tooltip/image URLs, and text metrics, joined to the
+      calendar dimension via _key_calendar.
+    columns:
+      - name: _key_comics
+        description: Surrogate key (comic number).
+        tests:
+          - not_null
+          - unique
+
+      - name: _key_calendar
+        data_type: date
+        description: Publication date used to join to the calendar dimension.
+        tests:
+          - relationships:
+              arguments:
+                to: ref('calendar')
+                field: _key_calendar
+
+      - name: month
+        data_type: string
+        description: Month of publication (string, from the XKCD API).
+
+      - name: num
+        description: Comic number.
+
+      - name: link
+        data_type: string
+        description: URL the comic links to (optional).
+
+      - name: year
+        data_type: string
+        description: Year of publication (string, from the XKCD API).
+
+      - name: news
+        data_type: string
+        description: News/announcement text attached to the comic (optional).
+
+      - name: safe_title
+        data_type: string
+        description: URL-safe title of the comic.
+
+      - name: transcript
+        data_type: string
+        description: Transcript text of the comic (when available).
+
+      - name: title
+        data_type: string
+        description: Display title of the comic.
+
+      - name: day
+        data_type: string
+        description: Day of month of publication (string, from the XKCD API).
+
+      - name: extra_parts
+        data_type: string
+        description: Extra parts for interactive comics.
+
+      - name: publication_date
+        data_type: date
+        description: Publication date built from year/month/day (NULL if invalid).
+
+      - name: is_valid_date
+        data_type: boolean
+        description: Whether year/month/day form a valid date.
+        tests:
+          - not_null
+          - accepted_values:
+             arguments:
+              values: [true]
+
+      - name: tooltip_text
+        data_type: string
+        description: Alt/tooltip text shown on hover.
+
+      - name: img_url
+        data_type: string
+        description: URL of the comic image.
+
+      - name: nr_news
+        description: 1 if the comic has news text, else 0.
+
+      - name: nr_links
+        description: 1 if the comic has a link, else 0.
+
+      - name: nr_extra_parts
+        description: 1 if the comic has extra parts, else 0.
+
+      - name: transcript_characters_count
+        description: Number of characters in the transcript.
+
+      - name: transcript_word_count
+        description: Number of words in the transcript.
+
+      - name: tooltip_characters_count
+        description: Number of characters in the tooltip text.
+
+      - name: tooltip_word_count
+        description: Number of words in the tooltip text.
+
+      - name: title_characters_count
+        description: Number of characters in the title.
+
+      - name: title_word_count
+        description: Number of words in the title.
+
+      - name: updated_at
+        data_type: timestamp
+        description: Timestamp when the record was last updated.

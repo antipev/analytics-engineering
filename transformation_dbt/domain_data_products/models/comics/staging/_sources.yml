@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: xkcd_duckdb
+    database: xkcd
+    schema: ingest
+    description: Raw xkcd data from DuckDB database
+    tables:
+      - name: raw_comics_v2
+        description: Fetched comics data the JSON interface xkcd.com/info.0.json (current comic). It contains, in a plaintext and easily-parsed format comic titles, URLs, post dates, transcripts (when available), and other metadata.

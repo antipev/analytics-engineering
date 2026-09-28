@@ -1,0 +1,40 @@
+==================== 2026-09-23T15:29:15.376148Z | 01a0cee2-a659-7582-a53e-070ed605bb6e ====================
+15:29:15.379743 [info ]: Installing dbt project and profile setup
+15:29:15.389629 [info ]: Info Created .vscode/extensions.json with dbt extension recommendation
+15:29:15.389784 [info ]: Success Project created successfully!
+15:29:15.389827 [info ]: Info Project name: jaffle_shop
+15:29:15.389853 [info ]: Info Project directory: jaffle_shop
+15:29:15.389895 [info ]: Info Setting up your profile...
+15:29:15.395497 [info ]: Info Creating new profile...
+16:04:38.668020 [info ]: No dbt_cloud.yml found - proceeding without cloud pre-population
+16:08:22.735112 [info ]: Success Profile written to /root/.dbt/profiles.yml
+16:08:22.735433 [info ]: Validating profile inputs, adapters, and connection
+
+16:08:22.735507 [info ]: dbt-fusion 2.0.0-preview.164
+16:08:22.735919 [info ]: Started loading project
+16:08:22.753571 [info ]: Loading ~/.dbt/profiles.yml
+16:08:22.761399 [info ]: Finished loading project [  0.03s]
+16:08:22.763783 [info ]: Started debugging
+16:08:22.763889 [info ]: Debugging profile: dev
+16:08:22.763945 [info ]: Debugging dbt version: 2.0.0-preview.164
+16:08:22.763955 [info ]: Debugging platform: linux x86_64 (unix)
+16:08:22.763970 [info ]: Debugging adapter type: bigquery (remote)
+16:08:22.766272 [info ]: Debugging dependencies:
+  git: OK
+16:08:22.767884 [info ]: Debugging connection:
+  "database": "my-1-st-project-training",
+  "schema": "transfromation_dbt",
+  "method": "oauth",
+  "location": "US",
+  "dataproc_batch": null
+16:08:25.219949 [info ]: Finished debugging [  2.46s]
+16:08:25.227984 [error]: dbt1011: dbt was unable to connect to the specified database.
+The following error was returned:
+
+execution error: [BigQuery] bigquery: constructing client: credentials: could not find default credentials. See https://cloud.google.com/docs/authentication/external/set-up-adc for more information
+
+Check your database credentials and try again. For more information, visit:
+https://docs.getdbt.com/docs/core/connect-data-platform/connection-profiles
+16:08:26.201312 [info ]: 
+==================== Execution Summary =====================
+Finished 'init' with 1 error for target 'dev' [39m 11s]
