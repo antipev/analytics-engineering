@@ -134,8 +134,13 @@ def insert_comic_to_duckdb(con, df: pd.DataFrame, schema_version: str, target_sc
 # ---------------------------------------------------------------------
 # Dagster Asset: Orchestrates Incremental Ingestion & Gap Filling
 # ---------------------------------------------------------------------
-@dg.asset
-def step_1_ingestion(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
+@dg.asset(key="raw_comics_v2", group_name="comics", kinds={"python"})
+# - `key="raw_comics_v2"` → the asset's __unique ID__. Without it, the key is the function name (`step_1_ingestion_comics`).
+# Setting it to `raw_comics_v2` makes it __match__ the dbt source you declared in `_sources.yml` (`asset_key: ["raw_comics_v2"]`). 
+# When the two keys match, Dagster draws the edge: `raw_comics_v2` (ingestion) → `stg_comics` → `int_comics` → `comics`.
+# - `group_name="comics"` → puts the asset into the __"comics" group__ in the UI (so it sits next to the comics dbt models, not the default group).
+
+def step_1_ingestion_comics(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
     """Backfill any missing XKCD comics into DuckDB.
 
     We fetch many comics over HTTP at the same time (in parallel) instead of

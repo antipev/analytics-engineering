@@ -39,6 +39,13 @@ uv pip install pandas
 uv pip install duckdb
     # The fast, embedded analytical database used to execute local SQL queries and store versioned tables
 
+uv pip install dagster-dg-cli
+    # Separate CLI from `dagster`, provided by the `dagster-dg-cli` package
+    to run commands:  dg dev   or   dg list defs
+
+uv pip install -e .
+    # Installs your project in editable mode so changes apply instantly without reinstalling
+
 ```
 
 3. Save Your Dependencies (requirements.txt)
@@ -269,7 +276,7 @@ V2 - version of schema, if at some point your ingestion failed due to schema dri
 
 5. Add data processing Python functions to
 - test_ingestion.ipynb
-- step_1_ingestion.py
+- step_1_ingestion_comics.py
 
 Test them.
 
@@ -286,6 +293,9 @@ My example:
 
 ```
 cd /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster
+source /home/maxantipev/analytics-engineering/.venv/bin/activate
+
+
 dg list defs
 ```
 
@@ -309,6 +319,8 @@ Results:
 
 7. You can also load and validate your Dagster definitions with dg check defs:
 ```
+cd /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster
+source /home/maxantipev/analytics-engineering/.venv/bin/activate
 dg check defs
 ```
 Result:
@@ -325,6 +337,7 @@ Source: https://docs.dagster.io/guides/automate/schedules/defining-schedules
 
 ```
 cd /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster
+source /home/maxantipev/analytics-engineering/.venv/bin/activate
 dg scaffold defs dagster.schedule schedules.py
 
 ```
@@ -407,7 +420,7 @@ python -c "import duckdb; con = duckdb.connect('/home/maxantipev/analytics-engin
 ```
 python -c "
 import duckdb, pandas as pd, importlib.util
-spec = importlib.util.spec_from_file_location('s1', '/home/maxantipev/analytics-engineering/ingestion/xkcd_dagster/src/xkcd_dagster/defs/step_1_ingestion.py')
+spec = importlib.util.spec_from_file_location('s1', '/home/maxantipev/analytics-engineering/ingestion/xkcd_dagster/src/xkcd_dagster/defs/step_1_ingestion_comics.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 con = duckdb.connect()
 df = pd.DataFrame([{'alt':'x','day':'1','extra_parts':None,'img':'i','link':'l','month':'1','news':None,'num':1,'safe_title':'s','title':'t','transcript':'tr','year':'2006'}])
@@ -711,6 +724,8 @@ dbt parse --target duckdb_dev
 dbt compile --select calendar --target duckdb_dev
 cat target/compiled/domain_data_products/models/marts/comics/calendar.sql
 sed -n '1,40p' target/compiled/domain_data_products/models/marts/comics/calendar.sql
+
+dbt build --full-refresh --target duckdb_dev
 ```
 
 6. Add yml files 
@@ -790,6 +805,688 @@ print(con.execute(query).df())
 1           mart.comics        3302
 (xkcd-dagster) root@MSI:/home/maxantipev/analytics-engineering/transformation_dbt/domain_data_products# 
 ```
+
+
+## Preapre orchestration for Data transformation (dbt)
+
+
+The dagster-dbt library provides a DbtProjectComponent which can be used to easily represent dbt models as assets in Dagster. Dagster assets understand dbt at the level of individual dbt models. This means that you can:
+
+Use Dagster's UI or APIs to run subsets of your dbt models, seeds, and snapshots.
+Track failures, logs, and run history for individual dbt models, seeds, and snapshots.
+Define dependencies between individual dbt models and other data assets. For example, put dbt models after the Fivetran-ingested table that they read from, or put a machine learning after the dbt models that it's trained from.
+
+Source: https://docs.dagster.io/integrations/libraries/dbt
+
+
+### Create a dbt component
+
+Just enter the folder path of your dbt project to get started.
+
+```
+dg scaffold defs dagster_dbt.DbtProjectComponent dbt_ingest \
+  --project-path "dbt"
+```
+---Creating defs at /.../my-project/src/my_project/defs/dbt_ingest.
+
+My example:
+
+```
+cd /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster
+source /home/maxantipev/analytics-engineering/.venv/bin/activate
+
+dg scaffold defs dagster_dbt.DbtProjectComponent transformation_dbt \
+  --project-path "/home/maxantipev/analytics-engineering/transformation_dbt/domain_data_products"
+
+```
+---Creating defs at /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster/src/xkcd_dagster/defs/transformation_dbt.
+
+(The scaffold command only writes the project path.)
+
+
+The dg scaffold defs call will generate a defs.yaml file in your project structure:
+
+tree src/my_project
+```
+src/my_project
+├── __init__.py
+├── definitions.py
+└── defs
+    ├── __init__.py
+    └── dbt_ingest
+        └── defs.yaml
+
+3 directories, 4 files
+```
+
+In its scaffolded form, the defs.yaml file contains the configuration for your dbt project:
+
+```
+my_project/defs/dbt_ingest/defs.yaml
+type: dagster_dbt.DbtProjectComponent
+
+attributes:
+  project: '{{ context.project_root }}/dbt'
+```
+
+This is sufficient to load your dbt models as assets. 
+
+
+### List dbt components
+
+You can use `dg list defs` to see the asset representation:
+
+```bash
+dg list defs
+```
+
+My example — the XKCD pipeline assets (abridged):
+
+| Asset                       | Group   | Depends on                  | Kinds       |
+| --------------------------- | ------- | --------------------------- | ----------- |
+| `step_1_ingestion`          | default | —                           | —           |
+| `xkcd_duckdb/raw_comics_v2` | default | —                           | —           |
+| `staging/stg_comics`        | default | `xkcd_duckdb/raw_comics_v2` | dbt, duckdb |
+| `staging/int_comics`        | default | `staging/stg_comics`        | dbt, duckdb |
+| `staging/comics`            | default | `staging/int_comics`        | dbt, duckdb |
+| `staging/calendar`          | default | —                           | dbt, duckdb |
+
+The dbt component also loads the leftover Jaffle Shop tutorial models
+(`customers`, `orders`, `order_items`, `products`, `supplies`, `locations`,
+their `stg_*` and `raw/*` seeds) plus their dbt tests as asset checks, and
+the `schedules` schedule (cron `0 8 * * 1,3,5`).
+
+
+
+
+### Customize dbt assets
+
+1. Create a template variable
+
+First, create a template variable that extracts the group name from the fqn:
+
+my_project/defs/dbt_ingest/template_vars.py
+
+My Example:
+```
+touch /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster/src/xkcd_dagster/defs/transformation_dbt/template_vars.py
+```
+Insert code:
+```
+import os                                   # read env vars (DBT_TARGET)
+from collections.abc import Callable, Sequence
+from pathlib import Path                    # work with file paths
+from typing import Optional
+
+import dagster as dg
+
+
+# ---- Shared dbt project resolution (single source of truth) ----
+# Folders to skip when looking for dbt_project.yml (they are not dbt projects).
+_EXCLUDED_DIRS = {
+    ".venv", ".git", "logs", "target", "dbt_packages",
+    "__pycache__", ".local_defs_state", ".dg",
+}
+
+
+def find_dbt_project_dir() -> Path:
+    """Find the dbt project folder by locating its dbt_project.yml file.
+
+    Walks up from this file and searches for dbt_project.yml, skipping
+    venv/git/packages/artifacts, so the path is found automatically no
+    matter where the repo is checked out.
+    """
+    for parent in Path(__file__).resolve().parents:
+        for root, dirs, files in os.walk(parent):
+            dirs[:] = [d for d in dirs if d not in _EXCLUDED_DIRS and not d.startswith(".tmp")]
+            if "dbt_project.yml" in files:
+                return Path(root)
+    raise RuntimeError("Could not locate dbt_project.yml")
+
+
+# The dbt project root (e.g. .../transformation_dbt/domain_data_products).
+DBT_PROJECT_DIR = find_dbt_project_dir()
+
+# The models folder inside the dbt project (dbt's default model-paths).
+MODELS_DIR = DBT_PROJECT_DIR / "models"
+
+# dbt target: local DuckDB by default. Set DBT_TARGET=motherduck_dev to switch.
+DBT_TARGET = os.getenv("DBT_TARGET", "duckdb_dev")
+
+
+@dg.template_var
+def group_from_fqn() -> Callable[[Sequence[str]], str | None]:
+    """Returns a function that extracts the group name from a dbt model's fqn.
+
+    The fqn (fully qualified name) contains the directory structure, e.g.:
+    ["jaffle_shop", "staging", "stg_customers"] -> returns "staging"
+    ["jaffle_shop", "marts", "customers"] -> returns "marts"
+    """
+
+    def _get_group(fqn: Sequence[str]) -> str | None:
+        # fqn structure: [project_name, folder, ..., model_name]
+        # fqn[1] is the folder right after the project name (the pipeline/layer).
+        if len(fqn) >= 2:
+            return fqn[1]
+        return None
+
+    return _get_group
+```
+My example: 
+
+This code creates a `custom template variable` for Dagster that helps automatically organize your dbt models into groups (like staging, marts, etc.) based on their folder structure.
+
+- `@dg.template_var`: A Dagster decorator that registers this function as a template variable usable in your component configurations.
+
+- `group_from_fqn()`: The main factory function. It returns an inner function (`_get_group`) that Dagster will run for each dbt model.
+
+- `fqn (Fully Qualified Name)`: A list representing the file path of a dbt model. For example, ["my_project", "staging", "stg_customers"].
+
+- `fqn[1]`: It grabs the second item in the list (the folder right after the project name), which is usually your layer/folder name (staging, intermediate, marts).
+
+
+
+
+2. Reference the template variable in defs.yaml
+
+`my_project/defs/dbt_ingest/defs.yaml`
+
+```
+type: dagster_dbt.DbtProjectComponent
+template_vars_module: .template_vars
+
+attributes:
+  project: '{{ context.project_root }}/dbt'
+  translation:
+    group_name: "{{ group_from_fqn()(node.fqn) }}"
+    description: "Transforms data using dbt model {{ node.name }}"
+```
+
+With this configuration, models in models/staging/ will be assigned to the staging group, models in models/marts/ to the marts group, and so on.
+
+My Example:
+
+```
+type: dagster_dbt.DbtProjectComponent
+# Specifies that this component is built using Dagster's built-in dbt project template/component.
+
+template_vars_module: .template_vars
+# Points Dagster to your Python file (template_vars.py) so it can load custom template functions like group_from_fqn().
+
+attributes:
+  project: '{{ context.project_root }}/../../transformation_dbt/domain_data_products'
+  # Tells Dagster where to find your actual dbt project folder relative to this component configuration file.
+
+  translation:
+    group_name: "{{ group_from_fqn(node.fqn) }}"
+    # Automatically organizes your dbt models into UI groups by calling your custom function 
+    # and passing the dbt model's fully qualified name (fqn).
+
+    description: "Transforms data using dbt model {{ node.name }}"
+    # Dynamically generates a custom description for each generated Dagster asset 
+    # using the individual dbt model's name.
+```
+
+3. Add dbt asset
+
+Imagine a PythonScriptComponent that runs tranformation model :
+
+```
+dg scaffold defs dagster.PythonScriptComponent my_python_script
+```
+---Creating defs at /.../my-project/src/my_project/defs/my_python_script.
+
+
+My Example:
+```
+touch /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster/src/xkcd_dagster/defs/step_2_transformation_dbt.py
+```
+Code
+
+```
+import dagster as dg
+# Reuse the shared MODELS_DIR and group_from_fqn from template_vars.py
+# (no more hardcoded path here).
+from xkcd_dagster.defs.transformation_dbt.template_vars import MODELS_DIR, group_from_fqn
+
+# 1. Get the inner _get_group function from the template variable.
+extractor = group_from_fqn()
+
+# 2. Find the group names from the subfolders of the models directory
+#    (e.g. "comics", "jaffle_shop").
+all_groups = [
+    extractor([MODELS_DIR.parent.name, folder.name])
+    for folder in MODELS_DIR.iterdir()
+    if folder.is_dir()
+]
+
+# 3. Create one Dagster job per group, so each pipeline can be run separately.
+for group in all_groups:
+    globals()[f"{group}_job"] = dg.define_asset_job(
+        name=f"{group}_job",
+        selection=dg.AssetSelection.groups(group),
+    )
+
+```
+
+4. Test assets
+
+```
+set -a; source .env; set +a
+dg list defs
+
+```
+
+5. Verify the shared paths and that the assets/jobs are created:
+
+```
+cd /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster
+/home/maxantipev/analytics-engineering/.venv/bin/python -c "
+from xkcd_dagster.defs.transformation_dbt import template_vars as tv
+print('DBT_PROJECT_DIR:', tv.DBT_PROJECT_DIR)
+print('MODELS_DIR:', tv.MODELS_DIR)
+print('DBT_TARGET:', tv.DBT_TARGET)
+
+import xkcd_dagster.defs.step_1_ingestion_jaffle_shop as s1
+import xkcd_dagster.defs.step_2_transformation_dbt as s2
+print('step_1 assets:', [n for n in ('raw_customers','raw_orders','raw_items','raw_stores','raw_products','raw_supplies') if hasattr(s1, n)])
+print('step_2 jobs:', [n for n in dir(s2) if n.endswith('_job')])
+"
+```
+
+Expected output:
+```
+DBT_PROJECT_DIR: /home/maxantipev/analytics-engineering/transformation_dbt/domain_data_products
+MODELS_DIR: /home/maxantipev/analytics-engineering/transformation_dbt/domain_data_products/models
+DBT_TARGET: duckdb_dev
+step_1 assets: ['raw_customers', 'raw_orders', 'raw_items', 'raw_stores', 'raw_products', 'raw_supplies']
+step_2 jobs: ['comics_job', 'jaffle_shop_job']
+```
+
+
+
+
+### Connect upstream assets to dbt sources
+
+If your dbt models depend on data produced by other Dagster assets, you can connect them using dbt sources with Dagster metadata.
+
+Source: https://docs.dagster.io/integrations/libraries/dbt
+
+1. Define dbt sources with Dagster asset keys
+
+In your dbt project, create a sources.yml file that maps dbt sources to Dagster asset keys using the meta.dagster.asset_key configuration:
+
+```
+dbt/models/sources.yml
+# This file goes in your dbt project: dbt/models/sources.yml
+version: 2
+sources:
+  - name: raw
+    tables:
+      - name: raw_customers
+        meta:
+          dagster:
+            asset_key: ["raw_customers"]
+      - name: raw_orders
+        meta:
+          dagster:
+            asset_key: ["raw_orders"]
+```
+My Example:
+
+dbt 1.12's static analysis doesn't recognize `meta` at that level anymore
+
+```
+version: 2
+
+sources:
+  - name: ecom
+    schema: raw
+    description: E-commerce data for the Jaffle Shop
+    tables:
+      - name: raw_customers
+        description: One record per person who has purchased one or more items
+        config:
+          meta:
+            dagster:
+              asset_key: ["raw_customers"]
+      - name: raw_orders
+        description: One record per order (consisting of one or more order items)
+        config:
+          loaded_at_field: ordered_at
+          meta:
+            dagster:
+              asset_key: ["raw_orders"]
+      - name: raw_items
+        description: Items included in an order
+        config:
+          meta:
+            dagster:
+              asset_key: ["raw_items"]
+      - name: raw_stores
+        config:
+          loaded_at_field: opened_at
+          meta:
+            dagster:
+              asset_key: ["raw_stores"]
+      - name: raw_products
+        description: One record per SKU for items sold in stores
+        config:
+          meta:
+            dagster:
+              asset_key: ["raw_products"]
+      - name: raw_supplies
+        description: One record per supply per SKU of items sold in stores
+        config:
+          meta:
+            dagster:
+              asset_key: ["raw_supplies"]
+
+
+```
+
+
+2. Create upstream assets
+
+Create Dagster assets that produce the source data. The asset key must match the asset_key defined in your dbt sources (see step above):
+
+`my_project/defs/ingest/assets.py`
+
+```
+import os
+
+import duckdb
+import pandas as pd
+
+import dagster as dg
+
+
+@dg.asset(key="raw_customers", compute_kind="python")
+def raw_customers(context: dg.AssetExecutionContext) -> None:
+    """Ingest raw customer data from an external source."""
+    data = pd.read_csv("https://docs.dagster.io/assets/customers.csv")
+    connection = duckdb.connect(os.fspath("dbt/dev.duckdb"))
+    connection.execute("CREATE SCHEMA IF NOT EXISTS raw")
+    connection.execute(
+        "CREATE OR REPLACE TABLE raw.raw_customers AS SELECT * FROM data"
+    )
+    context.add_output_metadata({"num_rows": data.shape[0]})
+
+
+@dg.asset(key="raw_orders", compute_kind="python")
+def raw_orders(context: dg.AssetExecutionContext) -> None:
+    """Ingest raw orders data from an external source."""
+    data = pd.read_csv("https://docs.dagster.io/assets/orders.csv")
+    with duckdb.connect(os.fspath("dbt/dev.duckdb")) as connection:
+        connection.execute("CREATE SCHEMA IF NOT EXISTS raw")
+        connection.execute(
+            "CREATE OR REPLACE TABLE raw.raw_orders AS SELECT * FROM data"
+        )
+    context.add_output_metadata({"num_rows": data.shape[0]})
+```
+
+Dagster creates these connections by reading your dbt models. Whenever a dbt model references a source via source(), Dagster links the corresponding upstream asset to that model. In the asset graph UI, you'll see each upstream asset connected to the dbt models that reference it.
+
+My Example (minimum code — reuses `dbt seed` instead of reading CSVs in Python):
+
+File: `ingestion/xkcd_dagster/src/xkcd_dagster/defs/step_1_ingestion_jaffle_shop.py`
+
+```
+import dagster as dg
+from dagster_dbt import DbtCliResource, DbtProject
+# Reuse the shared DBT_PROJECT_DIR and DBT_TARGET from template_vars.py
+# (no hardcoded path, no hardcoded target).
+from xkcd_dagster.defs.transformation_dbt.template_vars import DBT_PROJECT_DIR, DBT_TARGET
+
+dbt_project = DbtProject(project_dir=DBT_PROJECT_DIR, target=DBT_TARGET)
+
+SEEDS = [
+    "raw_customers",
+    "raw_orders",
+    "raw_items",
+    "raw_stores",
+    "raw_products",
+    "raw_supplies",
+]
+
+
+def _seed_asset(name: str):
+    @dg.asset(key=name, group_name="jaffle_shop", kinds={"dbt"})
+    def _asset(context: dg.AssetExecutionContext):
+        # Create DbtCliResource directly (load_from_defs_folder doesn't collect
+        # @dg.resource, so we can't use a resource here).
+        dbt = DbtCliResource(project_dir=dbt_project)
+        dbt.cli(["seed", "--select", name]).wait()
+
+    return _asset
+
+
+for name in SEEDS:
+    globals()[name] = _seed_asset(name)
+```
+
+Note: `schema: raw` in `_sources.yml` matches `seeds: +schema: raw`, so `dbt seed` writes to the same `raw.*` tables the sources read.
+
+
+Switch the 6 jaffle staging models from `ref('raw_*')` to `source('ecom', 'raw_*')`:
+
+| File | Now references |
+|------|----------------|
+| `stg_customers.sql` | `source('ecom', 'raw_customers')` |
+| `stg_orders.sql` | `source('ecom', 'raw_orders')` |
+| `stg_order_items.sql` | `source('ecom', 'raw_items')` |
+| `stg_products.sql` | `source('ecom', 'raw_products')` |
+| `stg_supplies.sql` | `source('ecom', 'raw_supplies')` |
+| `stg_locations.sql` | `source('ecom', 'raw_stores')` |
+
+
+For **comics**, the same "source + asset key" pattern applies. The comics source in `models/comics/staging/_sources.yml` has `asset_key: ["raw_comics_v2"]`, and the ingestion asset in `step_1_ingestion_comics.py` is:
+
+```
+@dg.asset(key="raw_comics_v2", group_name="comics", kinds={"python"})
+```
+
+Comics ingestion is plain Python (XKCD API → DuckDB), so it uses `kinds={"python"}`. It currently writes to local DuckDB (`get_duckdb_connection` → `src/xkcd_dagster/defs/data/xkcd.duckdb`); switch to `md:xkcd` for MotherDuck later.
+
+
+3. Test Dagster
+
+```
+set -a; source .env; set +a
+dg list 
+dg dev
+```
+4. Run Dagster
+
+```
+cd /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster
+source /home/maxantipev/analytics-engineering/.venv/bin/activate
+set -a; source .env; set +a
+dg dev
+
+```
+
+
+### Add UI config
+
+The built-in `DbtProjectComponent` has `op_config_schema = None`, so it can't take a `full_refresh` checkbox in the UI out of the box.
+
+Source: https://docs.dagster.io/integrations/libraries/dbt/ (runtime config section)
+
+`full_refresh` tells dbt to rebuild the target table from scratch (drop + recreate) instead of just loading changed rows. It matters for **seeds** (so a changed seed CSV schema is reflected) and for **incremental models** (so they rebuild rather than only append new rows).
+
+To add a runtime `full_refresh` toggle for both models and seeds:
+
+**1. Models** — subclass `DbtProjectComponent` to expose a `full_refresh` config.
+
+File: `src/xkcd_dagster/defs/transformation_dbt/component.py`
+
+```python
+import dagster as dg
+from dagster_dbt import DbtProjectComponent
+
+
+class FullRefreshDbtProjectComponent(DbtProjectComponent):
+    """DbtProjectComponent with a runtime `full_refresh` toggle."""
+
+    @property
+    def op_config_schema(self) -> type[dg.Config]:
+        class DbtRunConfig(dg.Config):
+            full_refresh: bool = False   # dbt-standard name (snake_case)
+
+        return DbtRunConfig
+
+    def get_cli_args(self, context: dg.AssetExecutionContext) -> list[str]:
+        args = list(super().get_cli_args(context))
+        if context.op_config.get("full_refresh"):
+            args.append("--full-refresh")   # -> dbt build --full-refresh
+        return args
+```
+
+Then point `defs.yaml` at it: `type: .component.FullRefreshDbtProjectComponent`.
+
+**2. Seeds** — give the seed assets their own `config_schema`.
+
+File: `src/xkcd_dagster/defs/step_1_ingestion_jaffle_shop.py`
+
+```python
+class SeedConfig(dg.Config):
+    """Runtime config for the seed (ingestion) assets."""
+    full_refresh: bool = False   # -> dbt seed --full-refresh
+
+
+def _seed_asset(name: str, deps: list[dg.AssetKey] | None = None):
+    @dg.asset(
+        key=name,
+        group_name="jaffle_shop",
+        kinds={"dbt"},
+        config_schema=SeedConfig.to_fields_dict(),   # exposes full_refresh in the UI
+        deps=deps or [],                             # serialize seeds (avoid concurrent CREATE SCHEMA)
+    )
+    def _asset(context: dg.AssetExecutionContext):
+        dbt = DbtCliResource(project_dir=dbt_project)
+        args = ["seed", "--select", name]
+        if context.op_config.get("full_refresh"):
+            args.append("--full-refresh")
+        dbt.cli(args).wait()
+
+    return _asset
+
+_previous: dg.AssetKey | None = None
+for name in SEEDS:
+    globals()[name] = _seed_asset(name, deps=[_previous] if _previous else None)
+    _previous = dg.AssetKey(name)
+```
+
+**3. Use per asset** via run config:
+
+```yaml
+ops:
+  raw_customers:            # seed asset
+    config:
+      full_refresh: true
+
+  domain_data_products:     # dbt models op
+    config:
+      full_refresh: true
+```
+
+**4. Use in UI per asset** via run config:
+
+In the UI (`Launchpad (configure assets)`), materializing a single seed opens a per-asset config editor that shows the same field *without* the `ops:` nesting — just enter:
+
+```yaml
+full_refresh: true   # or false; leave blank for the default false
+```
+
+The editor also lists `{ env: String }` next to `Bool`. That's Dagster's generic "read this field from an environment variable" option, available on *every* config field (not specific to `full_refresh`). Ignore it unless you want to drive the flag from an env var:
+
+```yaml
+full_refresh: {"env": "FULL_REFRESH_FLAG"}
+```
+
+The full run-config (Launchpad) form is the `ops:` version above — both do the same thing; use whichever the UI presents.
+
+
+**4. Verify the toggle is exposed** (optional one-off check — do not commit)
+
+`dg list defs` only proves the assets load; it doesn't show whether `full_refresh` actually landed in the op config schema. Save this as a throwaway script (e.g. `/tmp/check_full_refresh.py`) and run it:
+
+```python
+from xkcd_dagster.definitions import defs
+
+concrete = defs()  # `defs` is a lazy @definitions wrapper — call it to get Definitions
+
+for assets_def in concrete.assets:
+    node = assets_def.node_def
+    if node is None or node.name not in ("raw_customers", "raw_products", "domain_data_products"):
+        continue
+    ct = node.config_schema.config_type
+    print(f"=== node={node.name} config_type={type(ct).__name__}")
+    for fname, field in getattr(ct, "fields", {}).items():
+        print(f"    {fname}: type={type(field.config_type).__name__}")
+```
+
+Run it:
+
+```bash
+cd /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster
+source /home/maxantipev/analytics-engineering/.venv/bin/activate
+set -a; source .env; set +a
+python /tmp/check_full_refresh.py
+```
+
+Expected output (the seeds each have their own op; the models share the single `domain_data_products` op):
+
+```text
+=== node=raw_customers config_type=Shape
+    full_refresh: type=Noneable
+=== node=raw_products config_type=Shape
+    full_refresh: type=Noneable
+=== node=domain_data_products config_type=Shape
+    full_refresh: type=Noneable
+```
+
+(`full_refresh: type=Noneable` = a nullable bool, since it's declared as `bool = False` with a default.)
+
+
+### Add dbt asset dependencies in other components
+
+If you want to refer to assets built by the dbt component elsewhere in your Dagster project, you can use the asset_key_for_model method on the dbt component. 
+
+Imagine a PythonScriptComponent that exports the customers model to a CSV file:
+
+```
+dg scaffold defs dagster.PythonScriptComponent my_python_script
+
+Creating defs at /.../my-project/src/my_project/defs/my_python_script.
+
+touch src/my_project/defs/my_python_script/export_customers.py
+```
+
+You can refer to the customers asset in this component by using the asset_key_for_model method on the dbt component:
+
+```
+my_project/defs/my_python_script/defs.yaml
+type: dagster.PythonScriptComponent
+
+attributes:
+  execution:
+    path: export_customers.py
+  assets:
+    - key: customers_export
+      deps:
+        - "{{ context.load_component('dbt_ingest').asset_key_for_model('customers') }}"
+
+dg list defs
+
+```
+
+
+
+
+
+
 
 
 
@@ -966,68 +1663,19 @@ con.close()
 
 
 
+4. Run Dagster
 
+```
 
+cd /home/maxantipev/analytics-engineering/ingestion/xkcd_dagster
+source /home/maxantipev/analytics-engineering/.venv/bin/activate
+set -a; source .env; set +a
+dg dev
 
+```
 
+### Notes — MotherDuck fixes
 
+- **Seeds serialized.** The 6 jaffle_shop seeds are chained via `deps` so they run one-at-a-time — parallel `dbt seed` caused a MotherDuck `Catalog write-write conflict on create with "raw"`. See `step_1_ingestion_jaffle_shop.py`.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-You can read the token directly from your JSON credentials file (or environment variable) and pass it into the DuckDB connection string.
-Python Code Snippet
-
-
-
-Python
-import json
-import duckdb
-
-
-def get_duckdb_connection(
-    config_path: str = "motherduck_credentials.json",
-):
-  """Reads MotherDuck credentials from JSON and establishes a connection."""
-  # Load token and database from JSON file
-  with open(config_path, "r") as f:
-    creds = json.load(f)
-
-  token = creds["motherduck_token"]
-  database = creds.get("database", "xkcd")
-
-  # Pass token directly into MotherDuck connection string
-  con = duckdb.connect(f"md:{database}?motherduck_token={token}")
-  return con
-
-
-Alternatively, if MOTHERDUCK_TOKEN is exported in your environment variables (export MOTHERDUCK_TOKEN="your_token"), DuckDB detects it automatically when running duckdb.connect("md:xkcd").
-Step 4: Configure profiles.yml for dbt
-To test your dbt transformations against MotherDuck using the dbt-duckdb adapter, configure your ~/.dbt/profiles.yml file as follows:
-
-
-
-YAML
-xkcd_dbt_project:
-  target: dev
-  outputs:
-    dev:
-      type: duckdb
-      path: 'md:xkcd'
-      # MotherDuck token passed via environment variable or inline string
-      token: "{{ env_var('MOTHERDUCK_TOKEN') }}"
-
+- **Marts schema = `marts`.** The comics and jaffle_shop marts models now set `schema='marts'` in their `config` blocks (and `materialized` was moved into the model files; the `dbt_project.yml` sections were emptied), so they land in schema `marts` instead of `staging`.

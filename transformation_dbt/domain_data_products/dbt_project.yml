@@ -20,11 +20,8 @@ models:
     comics:
       staging: {}
       intermediate: {}
-      marts:
-        +schema: mart
+      marts: {}
         
     jaffle_shop:
-      staging:
-        +materialized: view
-      marts:
-        +materialized: table
+      staging: {}
+      marts: {}

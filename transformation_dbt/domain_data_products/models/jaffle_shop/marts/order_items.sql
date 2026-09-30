@@ -1,3 +1,6 @@
+{{ config(materialized='table', schema='marts') }}
+
+
 with
 
 order_items as (

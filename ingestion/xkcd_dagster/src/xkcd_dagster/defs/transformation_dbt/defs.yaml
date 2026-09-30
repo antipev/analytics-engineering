@@ -1,0 +1,9 @@
+type: .component.FullRefreshDbtProjectComponent
+template_vars_module: .template_vars
+
+attributes:
+  project: '{{ context.project_root }}/../../transformation_dbt/domain_data_products'
+
+  translation:
+    group_name: "{{ group_from_fqn(node.fqn) }}"
+    description: "Transforms data using dbt model {{ node.name }}"

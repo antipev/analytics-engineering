@@ -1,7 +1,7 @@
 {{ config(
     materialized='incremental',
     unique_key='_key_comics',
-    schema='staging'
+    schema='marts'
 ) }}
 
 WITH
