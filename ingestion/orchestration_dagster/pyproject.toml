@@ -1,5 +1,5 @@
 [project]
-name = "xkcd_dagster"
+name = "orchestration_dagster"
 requires-python = ">=3.10,<3.15"
 version = "0.1.0"
 dependencies = [
@@ -28,9 +28,9 @@ force-include = { "pyproject.toml" = "pyproject.toml" }
 directory_type = "project"
 
 [tool.dg.project]
-root_module = "xkcd_dagster"
+root_module = "orchestration_dagster"
 registry_modules = [
-    "xkcd_dagster.components.*",
+    "orchestration_dagster.components.*",
 ]
 
 

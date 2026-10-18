@@ -1,7 +1,7 @@
 import dagster as dg
 from dagster_dbt import DbtCliResource, DbtProject
-from xkcd_dagster.defs.pipeline_config import JAFFLE_SEEDS
-from xkcd_dagster.defs.transformation_dbt.template_vars import DBT_PROJECT_DIR, DBT_TARGET
+from orchestration_dagster.defs.pipeline_config import JAFFLE_SEEDS
+from orchestration_dagster.defs.transformation_dbt.template_vars import DBT_PROJECT_DIR, DBT_TARGET
 
 dbt_project = DbtProject(project_dir=DBT_PROJECT_DIR, target=DBT_TARGET)
 

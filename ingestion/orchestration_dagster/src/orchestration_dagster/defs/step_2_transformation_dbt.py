@@ -1,6 +1,6 @@
 import dagster as dg
-from xkcd_dagster.defs.pipeline_config import INGESTION_KEYS_BY_GROUP
-from xkcd_dagster.defs.transformation_dbt.template_vars import MODELS_DIR, group_from_fqn
+from orchestration_dagster.defs.pipeline_config import INGESTION_KEYS_BY_GROUP
+from orchestration_dagster.defs.transformation_dbt.template_vars import MODELS_DIR, group_from_fqn
 
 # 2. Instantiate extractor
 extractor = group_from_fqn()

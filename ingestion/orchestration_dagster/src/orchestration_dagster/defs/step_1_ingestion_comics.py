@@ -57,7 +57,7 @@ def get_r2_client():
 # Function 2: Handle DuckDB connection and setup
 # ---------------------------------------------------------------------
 def get_duckdb_connection(
-    #db_path: str = "src/xkcd_dagster/defs/data/xkcd.duckdb", # Local DuckDB
+    #db_path: str = "src/orchestration_dagster/defs/data/xkcd.duckdb", # Local DuckDB
     db_path: str = "md:xkcd", # Mother Duck
 ):
   """Connects to the DuckDB database file and returns the connection object."""
@@ -82,7 +82,7 @@ def insert_comic_to_duckdb(con, df: pd.DataFrame, schema_version: str, target_sc
     automatically builds the target table name using the base name + version.
     """
     # Dynamically construct the configuration file path based on the version parameter
-    config_path = f"src/xkcd_dagster/defs/data/schema_config_{schema_version}.json"
+    config_path = f"src/orchestration_dagster/defs/data/schema_config_{schema_version}.json"
     
     # 1. Load the expected schema configuration
     with open(config_path, "r") as f:
