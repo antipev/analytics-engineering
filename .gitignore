@@ -1,3 +1,11 @@
+DOCUMENTATION/
 .vscode/
 .env
 logs/
+__pycache__/
+*.py[cod]
+.local_defs_state/
+target/
+dbt_packages/
+package-lock.concurrent-update-lock
+*.duckdb.wal
