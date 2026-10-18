@@ -1,5 +1,5 @@
 models:
-  - name: orders
+  - name: cafe_orders
     description: Order overview data mart, offering key details for each order inlcluding if it's a customer's first order and a food vs. drink item breakdown. One row per order.
     data_tests:
       - dbt_utils.expression_is_true:
@@ -35,9 +35,9 @@ models:
 unit_tests:
   - name: test_order_items_compute_to_bools_correctly
     description: "Test that the counts of drinks and food orders convert to booleans properly."
-    model: orders
+    model: cafe_orders
     given:
-      - input: ref('order_items')
+      - input: ref('cafe_order_items')
         rows:
           - {order_id: 1, order_item_id: 1, is_drink_item: false, is_food_item: true}
           - {order_id: 1, order_item_id: 2, is_drink_item: true, is_food_item: false}

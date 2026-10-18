@@ -1,5 +1,5 @@
 models:
-  - name: order_items
+  - name: cafe_order_items
     columns:
       - name: order_item_id
         data_tests:
@@ -9,12 +9,12 @@ models:
         data_tests:
           - relationships:
               arguments:
-                to: ref('orders')
+                to: ref('cafe_orders')
                 field: order_id
 unit_tests:
   - name: test_supply_costs_sum_correctly
     description: "Test that the counts of drinks and food orders convert to booleans properly."
-    model: order_items
+    model: cafe_order_items
     given:
       - input: ref('stg_supplies')
         rows:

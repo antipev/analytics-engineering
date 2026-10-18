@@ -19,7 +19,7 @@ Each domain owns its ingestion path, dbt models, marts, and business logic. Both
 | Domain | Business question | Source | Primary outputs |
 | --- | --- | --- | --- |
 | **XKCD** | How have technology, science, and gaming themes changed since 2005, and where should game development invest next? | XKCD JSON API | Incremental `comics` mart and `calendar` dimension |
-| **Jaffle Shop** | How is a cafe performing across sales, customers, products, stores, and supplies? | Six CSV seeds from dbt Labs | `orders`, `customers`, `order_items`, `products`, `locations`, and `supplies` marts |
+| **Jaffle Shop** | How is a cafe performing across sales, customers, products, stores, and supplies? | Six CSV seeds from dbt Labs | `cafe_orders`, `cafe_customers`, `cafe_order_items`, `cafe_products`, `cafe_locations`, and `cafe_supplies` marts |
 
 - **Implemented:** both ingestion and transformation pipelines, tests, documentation, orchestration, and containerized deployment.
 - **Roadmap:** Malloy semantic layer and an AI trend-analysis agent for XKCD.
@@ -74,7 +74,7 @@ MotherDuck and Dagster are shared. R2 is XKCD's raw landing zone; Jaffle Shop's 
 - Six CSV seeds from the [dbt Jaffle Shop project](https://github.com/dbt-labs/jaffle-shop) load into MotherDuck's `raw` schema: `raw_customers`, `raw_orders`, `raw_items`, `raw_stores`, `raw_products`, and `raw_supplies`.
 - The seed assets are chained in that order to avoid concurrent schema creation and write conflicts.
 - Materializing the final seed, `raw_supplies`, triggers `jaffle_shop_transformation_job`.
-- dbt builds staging models and marts for customers, orders, order items, products, locations, and supplies.
+- dbt builds staging models and six `cafe_` marts: `cafe_customers`, `cafe_orders`, `cafe_order_items`, `cafe_products`, `cafe_locations`, and `cafe_supplies`.
 
 **Outputs.** A tested, documented cafe analytics layer covering the full sales and operations lifecycle.
 
