@@ -1,17 +1,11 @@
 import dagster as dg
 from dagster_dbt import DbtCliResource, DbtProject
+from xkcd_dagster.defs.pipeline_config import JAFFLE_SEEDS
 from xkcd_dagster.defs.transformation_dbt.template_vars import DBT_PROJECT_DIR, DBT_TARGET
 
 dbt_project = DbtProject(project_dir=DBT_PROJECT_DIR, target=DBT_TARGET)
 
-SEEDS = [
-    "raw_customers",
-    "raw_orders",
-    "raw_items",
-    "raw_stores",
-    "raw_products",
-    "raw_supplies",
-]
+SEEDS = JAFFLE_SEEDS
 
 
 class SeedConfig(dg.Config):

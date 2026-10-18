@@ -1,24 +1,26 @@
+
 # Imports the core Dagster framework.
 import dagster as dg
 
 # Imports the Pandas library for tabular data structures.
 import pandas as pd
 
-# Imports the requests library for making HTTP API calls.
-import requests
+# Imports boto3 (AWS S3 SDK). Cloudflare R2 speaks the S3 API, so we use it to read the raw comic files.
+import boto3
 
 # Imports DuckDB for loading data into the database.
 import duckdb
 
-# Imports JSON for parsing our schema configuration files.
+# Imports JSON for parsing our schema configuration files and raw comic files.
 import json
 
-# Imports Python's built-in thread pool. We use it to download many XKCD
-# pages at the same time instead of one after another, which makes the
-# whole backfill finish many times faster.
+# Imports OS to read credentials from environment variables.
+import os
+
+# Imports Python's built-in thread pool. We use it to read many comic files at the same time.
 from concurrent.futures import ThreadPoolExecutor
 
-# Imports MotherDuck Credentials
+# Imports environment loader for MotherDuck and R2 credentials.
 from dotenv import load_dotenv
 
 
@@ -27,9 +29,32 @@ from dotenv import load_dotenv
 load_dotenv()
 #----------------------------------------------------------------------
 
+# Cloudflare R2 bucket and "folder" written by step_0_ingestion_comics.
+R2_BUCKET = "xkcd-ingest"
+R2_PREFIX = "raw_comics"
+
 
 # ---------------------------------------------------------------------
-# Function 1: Handle DuckDB connection and setup
+# Function 1: Handle R2 connection and setup
+# ---------------------------------------------------------------------
+def get_r2_client():
+  """Creates an S3 client connected to Cloudflare R2 and returns it.
+
+  Needs these values in .env:
+    R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+  """
+  account_id = os.environ["R2_ACCOUNT_ID"]
+  return boto3.client(
+      "s3",
+      endpoint_url=f"https://{account_id}.r2.cloudflarestorage.com",
+      aws_access_key_id=os.environ["R2_ACCESS_KEY_ID"],
+      aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
+      region_name="auto",
+  )
+
+
+# ---------------------------------------------------------------------
+# Function 2: Handle DuckDB connection and setup
 # ---------------------------------------------------------------------
 def get_duckdb_connection(
     #db_path: str = "src/xkcd_dagster/defs/data/xkcd.duckdb", # Local DuckDB
@@ -41,34 +66,16 @@ def get_duckdb_connection(
 
 
 # ---------------------------------------------------------------------
-# Function 2: Fetch a specific comic by number or fallback to latest
+# Function 3: Read ONE raw comic file from R2
 # ---------------------------------------------------------------------
-def fetch_xkcd_comic(comic_number: int = None) -> dict:
-    """Fetches comic metadata dynamically by ID, or gets the latest if none provided."""
-    if comic_number is not None:
-        url = f"https://xkcd.com/{comic_number}/info.0.json"
-    else:
-        url = "https://xkcd.com/info.0.json"
-        
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()
-    # Assign to variable instead of returning immediately
-    data = response.json()
-    
-    # Force extra_parts to always be a JSON string or None
-    if "extra_parts" in data and isinstance(data["extra_parts"], dict):
-        data["extra_parts"] = json.dumps(data["extra_parts"])
-    elif "extra_parts" not in data or data["extra_parts"] is None:
-        data["extra_parts"] = None
-    else:
-        data["extra_parts"] = str(data["extra_parts"])
-    
-    # Return transformed data
-    return data
+def read_comic_from_r2(s3, comic_number: int) -> dict:
+    """Reads raw_comics/<num>.json from R2 and returns it as a dictionary."""
+    obj = s3.get_object(Bucket=R2_BUCKET, Key=f"{R2_PREFIX}/{comic_number}.json")
+    return json.loads(obj["Body"].read().decode("utf-8"))
 
 
 # ---------------------------------------------------------------------
-# Function 3: Validate schema and insert into versioned DuckDB table
+# Function 4: Validate schema and insert into versioned DuckDB table
 # ---------------------------------------------------------------------
 def insert_comic_to_duckdb(con, df: pd.DataFrame, schema_version: str, target_schema: str) -> None:
     """Validates incoming DataFrame schema against a JSON config, and 
@@ -132,109 +139,112 @@ def insert_comic_to_duckdb(con, df: pd.DataFrame, schema_version: str, target_sc
 
 
 # ---------------------------------------------------------------------
-# Dagster Asset: Orchestrates Incremental Ingestion & Gap Filling
+# Dagster Config: options you can change in the Dagster UI before a run
 # ---------------------------------------------------------------------
-@dg.asset(key="raw_comics_v2", group_name="comics", kinds={"python"})
-# - `key="raw_comics_v2"` → the asset's __unique ID__. Without it, the key is the function name (`step_1_ingestion_comics`).
-# Setting it to `raw_comics_v2` makes it __match__ the dbt source you declared in `_sources.yml` (`asset_key: ["raw_comics_v2"]`). 
+class RefreshConfig(dg.Config):
+    # Set True in the Dagster UI to drop the MotherDuck table and rebuild it
+    # from every file in R2.
+    full_refresh: bool = False
+
+
+# ---------------------------------------------------------------------
+# Dagster Asset: Loads raw comic files from R2 into MotherDuck
+# ---------------------------------------------------------------------
+@dg.asset(
+    key="raw_comics_v2",
+    group_name="comics",
+    kinds={"python"},
+    # Runs after step_0 (asset key "raw_comics") finishes, so new files in R2 are loaded in the same run.
+    deps=[dg.AssetKey("raw_comics")],
+)
+# - `key="raw_comics_v2"` → the asset's __unique ID__. Matches the dbt source declared in `_sources.yml` (`asset_key: ["raw_comics_v2"]`).
 # When the two keys match, Dagster draws the edge: `raw_comics_v2` (ingestion) → `stg_comics` → `int_comics` → `comics`.
-# - `group_name="comics"` → puts the asset into the __"comics" group__ in the UI (so it sits next to the comics dbt models, not the default group).
+# - `group_name="comics"` → puts the asset into the __"comics" group__ in the UI.
 
-def step_1_ingestion_comics(context: dg.AssetExecutionContext) -> dg.MaterializeResult:
-    """Backfill any missing XKCD comics into DuckDB.
+def step_1_ingestion_comics(context: dg.AssetExecutionContext, config: RefreshConfig) -> dg.MaterializeResult:
+    """Load every raw comic file in R2 into MotherDuck that is not there yet.
 
-    We fetch many comics over HTTP at the same time (in parallel) instead of
-    one after another. That matters because each request only takes ~0.2-0.3
-    seconds, but there are ~3,300 of them: doing them one-by-one meant ~16
-    minutes of mostly waiting. Overlapping the requests cuts that to ~1-2 min.
+    Step 0 only writes files to R2. This step reads them, applies the schema
+    config, and inserts them into MotherDuck.
     """
     active_schema_version = "v2"
     target_schema = "ingest"
     target_table = f"{target_schema}.raw_comics_{active_schema_version}"
 
-    # 1. Open a connection to DuckDB (our local database file).
+    # 1. Open connections to R2 and MotherDuck.
+    s3 = get_r2_client()
     con = get_duckdb_connection()
 
     # Make sure the schema we will write into exists. "IF NOT EXISTS" makes
     # this safe to run every time.
     con.execute(f"CREATE SCHEMA IF NOT EXISTS {target_schema};")
 
-    # 2. Read every comic number we already have stored, so we only download
-    #    the gaps. We keep the numbers in a Python set, which answers
-    #    "is this number missing?" very quickly.
-    try:
-        existing_ids = con.execute(f"SELECT num FROM {target_table}").fetchall()
-        existing_set = {row[0] for row in existing_ids}
-    except Exception:
-        # If the table does not exist yet, there is nothing stored, so the
-        # set of comics we already have is just empty.
+    # 2. Read the comic numbers already in MotherDuck, so we only load the gaps.
+    #    Full refresh drops the table first, so everything gets reloaded.
+    if config.full_refresh:
+        con.execute(f"DROP TABLE IF EXISTS {target_table};")
         existing_set = set()
+    else:
+        try:
+            existing_ids = con.execute(f"SELECT num FROM {target_table}").fetchall()
+            existing_set = {row[0] for row in existing_ids}
+        except Exception:
+            # If the table does not exist yet, nothing is stored.
+            existing_set = set()
 
-    # 3. Ask the XKCD API for the newest comic, so we know how high to count.
-    latest_api_comic = fetch_xkcd_comic(comic_number=None)
-    max_api_id = latest_api_comic["num"]
+    # 3. List the comic files that step 0 wrote to R2.
+    r2_set = set()
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=R2_BUCKET, Prefix=f"{R2_PREFIX}/"):
+        for obj in page.get("Contents", []):
+            file_name = obj["Key"].split("/")[-1]
+            if file_name.endswith(".json"):
+                stem = file_name[:-len(".json")]
+                if stem.isdigit():
+                    r2_set.add(int(stem))
 
-    # 4. Build the list of comic numbers we still need to fetch.
-    #    Note: we skip #404 on purpose, because xkcd.com/404 has no comic
-    #    (it is the site's "not found" page).
-    missing_ids = [
-        i for i in range(1, max_api_id + 1)
-        if i != 404 and i not in existing_set
-    ]
+    # 4. Work out which R2 files are not in MotherDuck yet.
+    missing_ids = sorted(r2_set - existing_set)
 
-    context.log.info(f"Comics in DuckDB: {len(existing_set)}. Missing to fetch: {len(missing_ids)}.")
+    context.log.info(f"Comics in MotherDuck: {len(existing_set)}. Files in R2: {len(r2_set)}. To load: {len(missing_ids)}.")
 
-    # If nothing is missing, we are already up to date, so stop here.
     if not missing_ids:
-        context.log.info("Database is fully up to date! No missing comics to fetch.")
+        context.log.info("MotherDuck is fully up to date with R2. Nothing to load.")
         con.close()
         return dg.MaterializeResult()
 
-    # 5. Download the missing comics in parallel, then write them in batches.
-    #
-    #    A "batch" is just a list of comic dictionaries we collect in memory
-    #    and hand to DuckDB in ONE insert. Batching means far fewer trips to
-    #    the database (500 rows at a time instead of 1 at a time).
-    #
-    #    "max_workers" is how many downloads run at the same time. 20 is a
-    #    good balance: fast, but still polite to the XKCD server.
+    # 5. Read the files in parallel, then insert them in batches.
     success_count = 0    # how many comics we have successfully stored
-    batch = []           # comics collected but not yet written to DuckDB
-    batch_size = 500     # write to DuckDB once the batch reaches this size
+    batch = []           # comics read but not yet written to MotherDuck
+    batch_size = 500     # write to MotherDuck once the batch reaches this size
 
-    def _fetch(i: int):
-        """Download ONE comic. Return the error instead of raising it.
+    def _read(i: int):
+        """Read ONE file from R2. Return the error instead of raising it.
 
-        Returning the error (rather than raising) means one broken comic does
-        not stop the whole run; we check for errors back on the main thread.
-        We also must NOT call context.log here, because this function runs on
-        a background thread and Dagster's logging is not thread-safe.
+        We must NOT call context.log here, because this runs on a background
+        thread and Dagster's logging is not thread-safe.
         """
         try:
-            return fetch_xkcd_comic(comic_number=i)
+            return read_comic_from_r2(s3, i)
         except Exception as e:
             return e
 
-    # ThreadPoolExecutor runs several _fetch() calls at the same time across
-    # separate threads. pool.map() returns results in the SAME order as the
-    # numbers we gave it, so comics still go into DuckDB in ascending order.
+    # pool.map() returns results in the SAME order as the numbers we gave it,
+    # so comics are inserted in ascending order.
     with ThreadPoolExecutor(max_workers=20) as pool:
-        for i, result in zip(missing_ids, pool.map(_fetch, missing_ids)):
-            # If the download failed, _fetch returned the exception -> log it
-            # and move on to the next comic.
+        for i, result in zip(missing_ids, pool.map(_read, missing_ids)):
             if isinstance(result, Exception):
-                context.log.warning(f"Could not fetch comic #{i}: {result}")
+                context.log.warning(f"Could not read comic #{i} from R2: {result}")
                 continue
 
             batch.append(result)
 
-            # When the batch is full, write it to DuckDB and start a new one.
             if len(batch) >= batch_size:
                 df = pd.DataFrame(batch)
                 insert_comic_to_duckdb(con, df, schema_version=active_schema_version, target_schema=target_schema)
                 success_count += len(batch)
                 batch = []
-                context.log.info(f"Progress: Successfully ingested {success_count} comics so far (Current ID: #{i})...")
+                context.log.info(f"Progress: Loaded {success_count} comics into MotherDuck so far (Current ID: #{i})...")
 
     # Write whatever is left over (the last, smaller-than-500 batch, if any).
     if batch:
@@ -242,10 +252,9 @@ def step_1_ingestion_comics(context: dg.AssetExecutionContext) -> dg.Materialize
         insert_comic_to_duckdb(con, df, schema_version=active_schema_version, target_schema=target_schema)
         success_count += len(batch)
 
-    # Close the database connection and report how many comics we stored.
     con.close()
     context.log.info(
-        f"Successfully backfilled/fetched {success_count} missing comic(s) "
+        f"Successfully loaded {success_count} comic(s) into MotherDuck "
         f"using schema version: {active_schema_version}."
     )
 

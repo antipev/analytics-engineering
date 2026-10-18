@@ -1,4 +1,5 @@
 import dagster as dg
+from xkcd_dagster.defs.pipeline_config import INGESTION_KEYS_BY_GROUP
 from xkcd_dagster.defs.transformation_dbt.template_vars import MODELS_DIR, group_from_fqn
 
 # 2. Instantiate extractor
@@ -11,9 +12,17 @@ all_groups = [
     if folder.is_dir()
 ]
 
-# 4. Instantiate top-level asset jobs for Dagster discovery
+# 4. Instantiate ingestion and transformation jobs for Dagster discovery
 for group in all_groups:
-    globals()[f"{group}_job"] = dg.define_asset_job(
-        name=f"{group}_job", # ← the job NAME is created here, like comics_job, jaffle_shop_job 
-        selection=dg.AssetSelection.groups(group),
+    ingestion = dg.AssetSelection.assets(*INGESTION_KEYS_BY_GROUP[group])
+    transformation = dg.AssetSelection.groups(group) - ingestion
+
+    globals()[f"{group}_ingestion_job"] = dg.define_asset_job(
+        name=f"{group}_ingestion_job",
+        selection=ingestion,
+    )
+
+    globals()[f"{group}_transformation_job"] = dg.define_asset_job(
+        name=f"{group}_transformation_job",
+        selection=transformation,
     )

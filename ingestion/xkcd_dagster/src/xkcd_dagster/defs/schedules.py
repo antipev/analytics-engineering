@@ -1,8 +1,16 @@
 import dagster as dg
 
 
-@dg.schedule(cron_schedule="0 8 * * 1,3,5", target="*")
-def schedules(context: dg.ScheduleEvaluationContext) -> dg.RunRequest | dg.SkipReason:
-    context.log.info("Evaluating XKCD schedule: checking for new comic updates...")
-    return dg.RunRequest()
+@dg.schedule(
+    cron_schedule="0 8 * * 1,3,5",
+    job_name="comics_ingestion_job",
+    name="comics_ingestion_schedule",
+    default_status=dg.DefaultScheduleStatus.RUNNING,
+)
+def comics_ingestion_schedule(context: dg.ScheduleEvaluationContext):
+    context.log.info("Launching comics_ingestion_job; transformation is sensor-triggered.")
+    return dg.RunRequest(
+        tags={"domain": "comics", "stage": "ingestion"},
+    )
+
 
