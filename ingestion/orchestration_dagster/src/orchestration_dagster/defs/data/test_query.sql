@@ -10,7 +10,7 @@ SELECT
 * 
 FROM 
 "xkcd"."ingest"."raw_comics_v2"
-WHERE num = 277;
+WHERE num = '277';
 
 SELECT 
     table_catalog,
@@ -27,9 +27,9 @@ SELECT
 FROM information_schema.columns
 WHERE table_name = 'raw_comics_v2';
 
-SELECT * FROM "xkcd"."ingest"."raw_comics_v2" WHERE num = 277;
-SELECT * FROM "xkcd"."ingest"."raw_comics_v2" WHERE num = 1017;
-SELECT * FROM "xkcd"."ingest"."raw_comics_v2" WHERE num = 2067;
+SELECT * FROM "xkcd"."ingest"."raw_comics_v2" WHERE num = '277';
+SELECT * FROM "xkcd"."ingest"."raw_comics_v2" WHERE num = '1017';
+SELECT * FROM "xkcd"."ingest"."raw_comics_v2" WHERE num = '2067';
 
 SELECT * 
 FROM  "xkcd"."ingest"."comics"

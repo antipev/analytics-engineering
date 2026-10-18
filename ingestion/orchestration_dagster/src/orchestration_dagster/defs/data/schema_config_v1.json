@@ -1,16 +1,16 @@
 {
   "table_name": "raw_comics",
   "columns": {
-    "month": "object",
-    "num": "int64",
-    "link": "object",
-    "year": "object",
-    "news": "object",
-    "safe_title": "object",
-    "transcript": "object",
-    "alt": "object",
-    "img": "object",
-    "title": "object",
-    "day": "object"
+    "month": "string",
+    "num": "string",
+    "link": "string",
+    "year": "string",
+    "news": "string",
+    "safe_title": "string",
+    "transcript": "string",
+    "alt": "string",
+    "img": "string",
+    "title": "string",
+    "day": "string"
   }
 }

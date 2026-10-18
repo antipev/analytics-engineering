@@ -103,9 +103,13 @@ def insert_comic_to_duckdb(con, df: pd.DataFrame, schema_version: str, target_sc
         if col not in df.columns:
             df[col] = None
     
-    # Force extra_parts column to string/object so DuckDB creates a VARCHAR column
-    if "extra_parts" in df.columns:
-        df["extra_parts"] = df["extra_parts"].astype("string")
+    # Force every configured column to the pandas "string" dtype. Pandas infers
+    # text as "object" (pandas 2) or "str" (pandas 3), and num as int64; casting
+    # here keeps the schema contract strict: every configured column must be
+    # exactly "string" (including num).
+    for col, expected_type in expected_columns.items():
+        if expected_type == "string":
+            df[col] = df[col].astype("string")
 
     # 5. Re-order DataFrame columns to match the JSON configuration order exactly
     df = df[list(expected_columns.keys())]
@@ -121,7 +125,8 @@ def insert_comic_to_duckdb(con, df: pd.DataFrame, schema_version: str, target_sc
             f"Received: {sorted(actual_columns)}"
         )
         
-    # 7. Check for data type changes
+    # 7. Check for data type changes. All columns were normalized to "string"
+    #    above, so this remains a strict exact-match check.
     for col, expected_type in expected_columns.items():
         actual_type = str(df[col].dtype)
         if actual_type != expected_type:
@@ -186,8 +191,10 @@ def step_1_ingestion_comics(context: dg.AssetExecutionContext, config: RefreshCo
         existing_set = set()
     else:
         try:
-            existing_ids = con.execute(f"SELECT num FROM {target_table}").fetchall()
-            existing_set = {row[0] for row in existing_ids}
+            # num is stored as a string, while R2 filenames are parsed as ints.
+            # TRY_CAST also handles tables created before num became VARCHAR.
+            existing_ids = con.execute(f"SELECT TRY_CAST(num AS BIGINT) FROM {target_table}").fetchall()
+            existing_set = {row[0] for row in existing_ids if row[0] is not None}
         except Exception:
             # If the table does not exist yet, nothing is stored.
             existing_set = set()
