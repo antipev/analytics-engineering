@@ -2,7 +2,7 @@ import dagster as dg
 
 
 @dg.schedule(
-    cron_schedule="0 8 * * 1,3,5",
+    cron_schedule="0 8 1 * *",
     job_name="comics_ingestion_job",
     name="comics_ingestion_schedule",
     default_status=dg.DefaultScheduleStatus.RUNNING,

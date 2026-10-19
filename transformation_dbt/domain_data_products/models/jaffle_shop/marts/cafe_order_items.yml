@@ -1,19 +1,43 @@
 models:
   - name: cafe_order_items
+    description: Order items data mart, offering key details for each item in an order including product information and supply costs. One row per order item.
     columns:
       - name: order_item_id
+        description: The unique key for each order item.
         data_tests:
           - not_null
           - unique
       - name: order_id
+        description: The corresponding order each order item belongs to.
         data_tests:
+          - not_null
           - relationships:
               arguments:
                 to: ref('cafe_orders')
                 field: order_id
+      - name: product_id
+        description: The foreign key relating to the product ordered.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('cafe_products')
+                field: product_id
+      - name: order_date
+        description: The date the order was placed.
+      - name: product_name
+        description: The name of the product.
+      - name: product_price
+        description: The price of the product in USD.
+      - name: is_food_item
+        description: A boolean indicating if the product is a food item.
+      - name: is_drink_item
+        description: A boolean indicating if the product is a drink item.
+      - name: supply_cost
+        description: The total cost of supplies required to fulfill the product.
 unit_tests:
   - name: test_supply_costs_sum_correctly
-    description: "Test that the counts of drinks and food orders convert to booleans properly."
+    description: "Test that supply costs are correctly summed per product."
     model: cafe_order_items
     given:
       - input: ref('stg_supplies')
