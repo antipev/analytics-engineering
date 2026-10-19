@@ -1,0 +1,35 @@
+# Litestream runs inside the Cloud Run container and replicates Dagster's local
+# SQLite files to Cloudflare R2. The endpoint MUST include the https:// scheme.
+sync-interval: 1s
+shutdown-sync-timeout: 3s
+shutdown-sync-interval: 500ms
+
+dbs:
+  # Dagster keeps runs.db, per-run event-log DBs, and event_log.db here.
+  - dir: ${DAGSTER_HOME}/history
+    pattern: "*.db"
+    recursive: true
+    watch: true
+    replica:
+      type: s3
+      bucket: ${DAGSTER_R2_BUCKET}
+      path: ${DAGSTER_R2_PREFIX}/history
+      endpoint: https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+      region: auto
+      access-key-id: ${R2_ACCESS_KEY_ID}
+      secret-access-key: ${R2_SECRET_ACCESS_KEY}
+
+  # Dagster schedules/sensors live outside history/. Watch the directory so
+  # schedules.db is picked up when Dagster creates it after startup.
+  - dir: ${DAGSTER_HOME}/schedules
+    pattern: "*.db"
+    recursive: false
+    watch: true
+    replica:
+      type: s3
+      bucket: ${DAGSTER_R2_BUCKET}
+      path: ${DAGSTER_R2_PREFIX}/schedules
+      endpoint: https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+      region: auto
+      access-key-id: ${R2_ACCESS_KEY_ID}
+      secret-access-key: ${R2_SECRET_ACCESS_KEY}

@@ -5,37 +5,20 @@ export PORT="${PORT:-8080}"
 export DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-/app/transformation_dbt/domain_data_products}"
 export DBT_TARGET="${DBT_TARGET:-motherduck_dev}"
 export DAGSTER_HOME="${DAGSTER_HOME:-/tmp/dagster_home}"
-mkdir -p "$DAGSTER_HOME"
+export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}"
+export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}"
+export AWS_REGION="${AWS_REGION:-auto}"
 
-DBT_PROJECT_DIR=/app/transformation_dbt/domain_data_products
-mkdir -p "$DBT_PROJECT_DIR/target"
+mkdir -p "$DAGSTER_HOME/history/runs" "$DAGSTER_HOME/schedules"
 
-run_local_docs_fallback() {
-    echo "[entrypoint] Generating docs against a temporary local DuckDB target"
-    (cd "$DBT_PROJECT_DIR" && \
-        XKCD_DUCKDB_PATH="${TMPDIR:-/tmp}/dbt_docs.duckdb" \
-        timeout 60 dbt docs generate \
-            --profiles-dir "$DBT_PROFILES_DIR" \
-            --target duckdb_dev \
-            --empty-catalog) || \
-        echo "[entrypoint] WARNING: dbt docs fallback failed; /dbt-docs will be unavailable"
-}
+# Restore Dagster's SQLite state from R2 before the daemon/webserver start.
+# dbt docs are already built into the image; no docs generation happens here.
+python /app/docker/restore_dagster_state.py
 
-# Generate dbt docs at startup: catalog metadata requires a live MotherDuck
-# connection, so it cannot be generated at image-build time. If the catalog
-# query fails, generate a docs site from a temporary empty local DuckDB target
-# so the docs are still readable. Dagster must start even if docs generation
-# fails.
-if [ -n "${MOTHERDUCK_TOKEN:-}" ]; then
-    echo "[entrypoint] Generating dbt docs against target=${DBT_TARGET}"
-    if ! (cd "$DBT_PROJECT_DIR" && timeout 120 dbt docs generate --profiles-dir "$DBT_PROFILES_DIR" --target "$DBT_TARGET"); then
-        echo "[entrypoint] WARNING: dbt docs generation failed"
-        run_local_docs_fallback
-    fi
-else
-    echo "[entrypoint] WARNING: MOTHERDUCK_TOKEN is not set"
-    run_local_docs_fallback
-fi
+# A restored schedule may still be RUNNING from an older deployment. The code
+# default only applies to schedules without stored state, so force STOPPED
+# before the daemon can tick or race the /wake endpoint.
+python /app/docker/ensure_schedule_stopped.py
 
 # Render the single nginx listen port from Cloud Run's $PORT.
 sed "s/__PORT__/${PORT}/g" /app/docker/nginx.conf.template > /tmp/nginx.conf

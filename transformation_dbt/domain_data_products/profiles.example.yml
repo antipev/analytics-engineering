@@ -1,0 +1,25 @@
+domain_data_products:
+  target: "{{ env_var('DBT_TARGET', 'motherduck_dev') }}"
+  outputs:
+    dev:
+      type: bigquery
+      threads: 16
+      database: "{{ env_var('GCP_PROJECT_ID', env_var('BQ_PROJECT_ID', 'your-gcp-project-id')) }}"
+      schema: "{{ env_var('DBT_BIGQUERY_SCHEMA', 'transformation_dbt') }}"
+      method: oauth
+      location: "{{ env_var('GCP_LOCATION', 'US') }}"
+      dataproc_batch: null
+
+    duckdb_dev:
+      type: duckdb
+      path: "{{ env_var('XKCD_DUCKDB_PATH', 'data/xkcd.duckdb') }}"
+      schema: staging    # <--- Default base schema
+      threads: 4     
+      read_only: false
+      
+    motherduck_dev:
+      type: duckdb
+      path: "md:{{ env_var('MOTHERDUCK_DATABASE', 'xkcd') }}"
+      schema: staging    # <--- Default base schema
+      threads: 4
+      token: "{{ env_var('MOTHERDUCK_TOKEN') }}"

@@ -14,6 +14,8 @@ import duckdb
 # Imports JSON for parsing our schema configuration files and raw comic files.
 import json
 
+from pathlib import Path
+
 # Imports OS to read credentials from environment variables.
 import os
 
@@ -21,17 +23,18 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 # Imports environment loader for MotherDuck and R2 credentials.
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 
 #----------------------------------------------------------------------
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(find_dotenv(usecwd=True))
 #----------------------------------------------------------------------
 
 # Cloudflare R2 bucket and "folder" written by step_0_ingestion_comics.
-R2_BUCKET = "xkcd-ingest"
-R2_PREFIX = "raw_comics"
+R2_BUCKET = os.getenv("DAGSTER_R2_BUCKET", os.getenv("R2_BUCKET", "xkcd-ingest"))
+R2_PREFIX = os.getenv("COMICS_R2_PREFIX", "raw_comics")
+MAX_WORKERS = int(os.getenv("INGESTION_MAX_WORKERS", "20"))
 
 
 # ---------------------------------------------------------------------
@@ -56,11 +59,14 @@ def get_r2_client():
 # ---------------------------------------------------------------------
 # Function 2: Handle DuckDB connection and setup
 # ---------------------------------------------------------------------
-def get_duckdb_connection(
-    #db_path: str = "src/orchestration_dagster/defs/data/xkcd.duckdb", # Local DuckDB
-    db_path: str = "md:xkcd", # Mother Duck
-):
-  """Connects to the DuckDB database file and returns the connection object."""
+def get_duckdb_connection(db_path: str | None = None):
+  """Connects to DuckDB or MotherDuck and returns the connection object."""
+  if db_path is None:
+    if os.getenv("DBT_TARGET") == "duckdb_dev":
+      db_path = os.getenv("XKCD_DUCKDB_PATH", str(Path(__file__).parent / "data" / "xkcd.duckdb"))
+    else:
+      db_name = os.getenv("MOTHERDUCK_DATABASE", "xkcd")
+      db_path = f"md:{db_name}"
   con = duckdb.connect(db_path)
   return con
 
@@ -82,7 +88,7 @@ def insert_comic_to_duckdb(con, df: pd.DataFrame, schema_version: str, target_sc
     automatically builds the target table name using the base name + version.
     """
     # Dynamically construct the configuration file path based on the version parameter
-    config_path = f"src/orchestration_dagster/defs/data/schema_config_{schema_version}.json"
+    config_path = Path(__file__).parent / "data" / f"schema_config_{schema_version}.json"
     
     # 1. Load the expected schema configuration
     with open(config_path, "r") as f:
@@ -238,7 +244,7 @@ def step_1_ingestion_comics(context: dg.AssetExecutionContext, config: RefreshCo
 
     # pool.map() returns results in the SAME order as the numbers we gave it,
     # so comics are inserted in ascending order.
-    with ThreadPoolExecutor(max_workers=20) as pool:
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         for i, result in zip(missing_ids, pool.map(_read, missing_ids)):
             if isinstance(result, Exception):
                 context.log.warning(f"Could not read comic #{i} from R2: {result}")

@@ -22,19 +22,22 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 
 # Imports environment loader for R2 credentials.
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 
 #----------------------------------------------------------------------
 # Load environment variables from .env file
-load_dotenv()
+load_dotenv(find_dotenv(usecwd=True))
 #----------------------------------------------------------------------
 
 # Name of the Cloudflare R2 bucket where each comic is stored as its own file.
-R2_BUCKET = "xkcd-ingest"
+R2_BUCKET = os.getenv("DAGSTER_R2_BUCKET", os.getenv("R2_BUCKET", "xkcd-ingest"))
 
 # "Folder" inside the bucket where the comic files are saved.
-R2_PREFIX = "raw_comics"
+R2_PREFIX = os.getenv("COMICS_R2_PREFIX", "raw_comics")
+
+# Worker concurrency for network requests
+MAX_WORKERS = int(os.getenv("INGESTION_MAX_WORKERS", "20"))
 
 
 # ---------------------------------------------------------------------
@@ -107,7 +110,7 @@ def save_comics_to_r2(s3, batch: list) -> int:
             return e
 
     uploaded = 0
-    with ThreadPoolExecutor(max_workers=20) as pool:
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         for result in pool.map(_upload, batch):
             if result is None:
                 uploaded += 1
@@ -205,7 +208,7 @@ def step_0_ingestion_comics(context: dg.AssetExecutionContext, config: RefreshCo
     # ThreadPoolExecutor runs several _fetch() calls at the same time across
     # separate threads. pool.map() returns results in the SAME order as the
     # numbers we gave it, so comics are saved in ascending order.
-    with ThreadPoolExecutor(max_workers=20) as pool:
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         for i, result in zip(missing_ids, pool.map(_fetch, missing_ids)):
             # If the download failed, _fetch returned the exception -> log it
             # and move on to the next comic.
