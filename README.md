@@ -4,7 +4,7 @@
 
 
 **The Economics of Data, Analytics, and Digital Transformation by Bill Schmarzo**:
-"One of the most significant impediments (`obstacles or things that slow down or block progress`) to realizing the economic value of one's data that was identified in the Economic Value of Data research was "*orphaned analytics*."
+"One of the most significant impediments (`obstacles or things that slow down or block progress`) to realizing the economic value of one's data that was identified in the Economic Value of Data research was "orphaned analytics."
 
 `Orphaned analytics` are one-off analytics developed to address a specific business need but never "operationalized" or packaged for reuse across the organization.
 
