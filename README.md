@@ -1,6 +1,4 @@
-# Analytics Engineering — XKCD & Jaffle Shop
-
-`Analytics engineering` turns raw, messy data into clean, tested, documented datasets.
+# Why?
 
 
 **The Economics of Data, Analytics, and Digital Transformation by Bill Schmarzo**:
@@ -8,7 +6,7 @@
 
 `Orphaned analytics` are one-off analytics developed to address a specific business need but never "operationalized" or packaged for reuse across the organization.
 
-"Organizations lack an overarching framework to ensure that the resulting analytics and associated organizational intellectual capital can be captured and reused across multiple use cases. Without this over-arching analytics framework, organizations end up playing a game of analytics "whack-a-mole" where the analytics team focuses their precious and valuable resources on those immediate (urgent) problems, short-changing the larger, more strategic analytic opportunities."
+  - "Organizations lack an overarching framework to ensure that the resulting analytics and associated organizational intellectual capital can be captured and reused across multiple use cases. Without this over-arching analytics framework, organizations end up playing a game of analytics "whack-a-mole" where the analytics team focuses their precious and valuable resources on those immediate (urgent) problems, short-changing the larger, more strategic analytic opportunities."
 
 "**The modern organization needs an overarching analytic module framework to help organizations to capture, share, reuse, and refine the organization's analytic `Intellectual Property (IP)`. For organizations to succeed in the 21st century, they `must invest the data science and engineering time` and discipline to master the `development of composable, reusable, continuously learning analytic modules`....that `deliver pre-defined business or operational outcomes`.**"
 
@@ -26,7 +24,9 @@
 
 
 
-## Repo
+# Analytics Engineering — XKCD & Jaffle Shop
+
+`Analytics engineering` turns raw, messy data into clean, tested, documented datasets. Analytics engineers package this work as reusable analytic modules that teams can consume for business outcomes.
 
 This repository applies that discipline to two independent domains on one shared platform:
 - Dagster for orchestration,
