@@ -14,6 +14,14 @@ profiles.yml
 
 # Local files kept on disk but not versioned
 .venv
+
+# Local Malloy Publisher state (generated package copies and MCP config)
+semantic_layer/publisher_data/
+semantic_layer/publisher.db
+semantic_layer/publisher.db.wal
+semantic_layer/publisher.db-shm
+semantic_layer/.mcp.json
+
 *.ipynb
 ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_query.sql
 ingestion/orchestration_dagster/README.md

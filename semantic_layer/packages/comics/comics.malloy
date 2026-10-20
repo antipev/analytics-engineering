@@ -1,0 +1,3 @@
+source: comics is motherduck.table('marts.comics')
+
+source: calendar is motherduck.table('marts.calendar')

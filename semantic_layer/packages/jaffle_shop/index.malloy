@@ -1,0 +1,5 @@
+import "customers.malloy"
+import "orders.malloy"
+import "products.malloy"
+import "locations.malloy"
+import "supplies.malloy"

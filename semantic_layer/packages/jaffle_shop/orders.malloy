@@ -1,0 +1,2 @@
+source: cafe_orders is motherduck.table('marts.cafe_orders')
+source: cafe_order_items is motherduck.table('marts.cafe_order_items')

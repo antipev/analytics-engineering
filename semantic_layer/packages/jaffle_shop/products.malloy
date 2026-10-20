@@ -1,0 +1,1 @@
+source: cafe_products is motherduck.table('marts.cafe_products')
