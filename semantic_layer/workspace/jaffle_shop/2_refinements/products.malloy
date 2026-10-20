@@ -1,0 +1,46 @@
+import '../1_raw_views/config.malloy'
+
+#(doc) "Jaffle Shop product catalogue with menu categories and pricing."
+source: cafe_products is cafe_products_raw extend {
+
+  primary_key: Product_id
+
+  rename:
+    #(doc) "Unique identifier for the product."
+    `Product_id` is product_id
+
+    #(doc) "Product name shown on the menu."
+    `Product_name` is product_name
+
+    #(doc) "Product category."
+    `Product_type` is product_type
+
+    #(doc) "Product description."
+    `Product_description` is product_description
+
+    #(doc) "Menu price of the product."
+    `Product_price` is product_price
+
+    #(doc) "Whether the product is a food item."
+    `Is_food_item` is is_food_item
+
+    #(doc) "Whether the product is a drink item."
+    `Is_drink_item` is is_drink_item
+
+  measure:
+    #(doc) "Total number of products."
+    `Product_Count` is count()
+
+    #(doc) "Average menu price across the selected products."
+    `Average_Product_Price` is avg(Product_price)
+
+    #(doc) "Number of food products."
+    `Food_Product_Count` is count() { where: Is_food_item }
+
+    #(doc) "Number of drink products."
+    `Drink_Product_Count` is count() { where: Is_drink_item }
+
+    #(doc) "Difference between the highest and lowest menu price."
+    `Menu_Price_Range` is max(Product_price) - min(Product_price)
+
+}

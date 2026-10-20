@@ -1,0 +1,5 @@
+/// COMICS
+source: comics_raw is motherduck.table('marts.comics')
+
+/// CALENDAR
+source: calendar_raw is motherduck.table('marts.calendar')

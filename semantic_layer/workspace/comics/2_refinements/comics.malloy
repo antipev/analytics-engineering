@@ -1,0 +1,109 @@
+import '../1_raw_views/config.malloy'
+
+#(doc) "XKCD comic catalogue with publication metadata, text metrics, and image links."
+source: comics is comics_raw extend {
+
+  primary_key: Comic_key
+
+  rename:
+    #(doc) "Surrogate key for the comic, derived from the XKCD comic number."
+    `Comic_key` is `_key_comics`
+
+    #(doc) "Publication date used to join the comic to the calendar dimension."
+    `Calendar_key` is `_key_calendar`
+
+    #(doc) "XKCD comic number as published by the API."
+    `Comic_number` is `num`
+
+    #(doc) "Month of publication as returned by the XKCD API."
+    `Month` is `month`
+
+    #(doc) "Year of publication as returned by the XKCD API."
+    `Year` is `year`
+
+    #(doc) "Day of month of publication as returned by the XKCD API."
+    `Day` is `day`
+
+    #(doc) "Optional URL the comic links to."
+    `Link` is `link`
+
+    #(doc) "Optional news or announcement text attached to the comic."
+    `News` is `news`
+
+    #(doc) "URL-safe title of the comic."
+    `Safe_title` is `safe_title`
+
+    #(doc) "Display title of the comic."
+    `Title` is `title`
+
+    #(doc) "Transcript text of the comic when available."
+    `Transcript` is `transcript`
+
+    #(doc) "Extra parts required by interactive comics."
+    `Extra_parts` is `extra_parts`
+
+    #(doc) "Publication date built from year, month, and day."
+    `Publication_date` is `publication_date`
+
+    #(doc) "Whether the source year, month, and day form a valid date."
+    `Is_valid_date` is `is_valid_date`
+
+    #(doc) "Alt text shown when hovering over the comic."
+    `Tooltip_text` is `tooltip_text`
+
+    #(doc) "URL of the comic image."
+    `Image_url` is `img_url`
+
+    #(doc) "1 when the comic has news text, otherwise 0."
+    `News_count` is `nr_news`
+
+    #(doc) "1 when the comic has a link, otherwise 0."
+    `Link_count` is `nr_links`
+
+    #(doc) "1 when the comic has extra parts, otherwise 0."
+    `Extra_parts_count` is `nr_extra_parts`
+
+    #(doc) "Number of characters in the transcript."
+    `Transcript_characters` is `transcript_characters_count`
+
+    #(doc) "Number of words in the transcript."
+    `Transcript_words` is `transcript_word_count`
+
+    #(doc) "Number of characters in the tooltip text."
+    `Tooltip_characters` is `tooltip_characters_count`
+
+    #(doc) "Number of words in the tooltip text."
+    `Tooltip_words` is `tooltip_word_count`
+
+    #(doc) "Number of characters in the title."
+    `Title_characters` is `title_characters_count`
+
+    #(doc) "Number of words in the title."
+    `Title_words` is `title_word_count`
+
+    #(doc) "Timestamp when the comic record was last updated."
+    `Updated_at` is `updated_at`
+
+  measure:
+    #(doc) "Total number of comics in the catalogue."
+    `Comic_Count` is count()
+
+    #(doc) "Total number of transcript words across the selected comics."
+    `Total_Transcript_Words` is sum(Transcript_words)
+
+    #(doc) "Average number of transcript words per comic."
+    `Average_Transcript_Words` is avg(Transcript_words)
+
+    #(doc) "Average number of words in a comic title."
+    `Average_Title_Words` is avg(Title_words)
+
+    #(doc) "Average number of words in a comic tooltip."
+    `Average_Tooltip_Words` is avg(Tooltip_words)
+
+    #(doc) "Number of comics that include news text."
+    `Comics_With_News` is count() { where: News_count = 1 }
+
+    #(doc) "Number of comics that include an outbound link."
+    `Comics_With_Links` is count() { where: Link_count = 1 }
+
+}

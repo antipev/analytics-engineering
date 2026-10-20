@@ -1,0 +1,12 @@
+{
+  "connections": {
+    "motherduck": {
+      "is": "duckdb",
+      "databasePath": "md:data_warehouse_demo",
+      "motherDuckToken": {
+        "env": "MOTHERDUCK_TOKEN"
+      },
+      "workingDirectory": "semantic_layer/workspace"
+    }
+  }
+}

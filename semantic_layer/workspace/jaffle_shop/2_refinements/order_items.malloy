@@ -1,0 +1,61 @@
+import '../1_raw_views/config.malloy'
+import 'products.malloy'
+
+#(doc) "One row per order item, enriched with product attributes and supply cost."
+source: cafe_order_items is cafe_order_items_raw extend {
+
+  primary_key: Order_item_id
+
+  rename:
+    #(doc) "Unique identifier for the order item."
+    `Order_item_id` is order_item_id
+
+    #(doc) "Order that contains this item."
+    `Order_id` is order_id
+
+    #(doc) "Product ordered."
+    `Product_id` is product_id
+
+    #(doc) "Date the parent order was placed."
+    `Order_date` is order_date
+
+    #(doc) "Product name at the time of the order."
+    `Product_name` is product_name
+
+    #(doc) "Product price at the time of the order."
+    `Product_price` is product_price
+
+    #(doc) "Whether the item is food."
+    `Is_food_item` is is_food_item
+
+    #(doc) "Whether the item is a drink."
+    `Is_drink_item` is is_drink_item
+
+    #(doc) "Cost of supplies required to fulfil the item."
+    `Supply_cost` is supply_cost
+
+  join_one: cafe_products on Product_id = cafe_products.Product_id
+
+  measure:
+    #(doc) "Total number of order items."
+    `Order_Item_Count` is count()
+
+    #(doc) "Revenue from order items before tax."
+    `Item_Revenue` is sum(Product_price)
+
+    #(doc) "Total supply cost for the selected order items."
+    `Total_Supply_Cost` is sum(Supply_cost)
+
+    #(doc) "Item-level gross margin: item revenue minus supply cost."
+    `Item_Gross_Margin` is Item_Revenue - Total_Supply_Cost
+
+    #(doc) "Average price per order item."
+    `Average_Item_Price` is avg(Product_price)
+
+    #(doc) "Number of food items sold."
+    `Food_Item_Count` is count() { where: Is_food_item }
+
+    #(doc) "Number of drink items sold."
+    `Drink_Item_Count` is count() { where: Is_drink_item }
+
+}

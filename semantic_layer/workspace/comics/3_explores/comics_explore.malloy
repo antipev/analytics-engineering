@@ -1,0 +1,34 @@
+##! experimental.access_modifiers
+
+import '../2_refinements/comics.malloy'
+import '../2_refinements/calendar.malloy'
+
+#(doc) "Publication-ready explore for XKCD comics enriched with calendar attributes."
+#(doc) "Use Comic_Count and the text measures from comics, and Calendar_* dimensions for time-based analysis."
+source: comics_explore is comics extend {
+
+  join_one: calendar on Calendar_key = calendar._key_calendar
+
+  dimension:
+    #(doc) "Calendar year in which the comic was published."
+    `Calendar_Year` is calendar.Calendar_year
+
+    #(doc) "Calendar month in which the comic was published."
+    `Calendar_Month` is calendar.Calendar_month
+
+    #(doc) "Month and year in which the comic was published."
+    `Calendar_Month_Year` is calendar.Calendar_month_year
+
+    #(doc) "ISO week in which the comic was published."
+    `Calendar_Week` is calendar.Calendar_week
+
+    #(doc) "Day of the week on which the comic was published."
+    `Calendar_Day_Of_Week` is calendar.Calendar_day_of_week
+
+    #(doc) "Calendar quarter in which the comic was published."
+    `Calendar_Quarter` is calendar.Calendar_quarter
+
+} include {
+  *
+  private: calendar
+}

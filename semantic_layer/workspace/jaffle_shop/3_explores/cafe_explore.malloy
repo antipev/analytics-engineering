@@ -1,0 +1,25 @@
+##! experimental.access_modifiers
+
+import '../2_refinements/orders.malloy'
+
+#(doc) "Order-grain explore for Jaffle Shop revenue, customer, location, and product analysis."
+#(doc) "Use Order_Count, Total_Revenue, and the order measures at this grain; drill into cafe_order_items for product-level analysis."
+source: cafe_explore is cafe_orders extend {
+
+  dimension:
+    #(doc) "Name of the customer who placed the order."
+    `Customer_Name` is cafe_customers.Customer_name
+
+    #(doc) "Customer segment: new or returning."
+    `Customer_Type` is cafe_customers.Customer_type
+
+    #(doc) "Store location where the order was placed."
+    `Location_Name` is cafe_locations.Location_name
+
+    #(doc) "Tax rate of the store location."
+    `Location_Tax_Rate` is cafe_locations.Tax_rate
+
+} include {
+  *
+  private: cafe_customers, cafe_locations
+}

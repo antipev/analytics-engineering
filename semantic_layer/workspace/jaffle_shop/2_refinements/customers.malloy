@@ -1,0 +1,58 @@
+import '../1_raw_views/config.malloy'
+
+#(doc) "One row per Jaffle Shop customer with lifetime order and spend metrics."
+source: cafe_customers is cafe_customers_raw extend {
+
+  primary_key: Customer_id
+
+  rename:
+    #(doc) "Unique identifier for the customer."
+    `Customer_id` is customer_id
+
+    #(doc) "Customer full name."
+    `Customer_name` is customer_name
+
+    #(doc) "Total number of orders the customer has placed."
+    `Count_lifetime_orders` is count_lifetime_orders
+
+    #(doc) "Date of the customer's first order."
+    `First_order_date` is first_order_date
+
+    #(doc) "Date of the customer's most recent order."
+    `Last_order_date` is last_order_date
+
+    #(doc) "Lifetime spend before tax."
+    `Lifetime_spend_pretax` is lifetime_spend_pretax
+
+    #(doc) "Lifetime tax paid."
+    `Lifetime_tax_paid` is lifetime_tax_paid
+
+    #(doc) "Lifetime spend including tax."
+    `Lifetime_spend` is lifetime_spend
+
+    #(doc) "Customer segment: new or returning."
+    `Customer_type` is customer_type
+
+  measure:
+    #(doc) "Total number of customers."
+    `Customer_Count` is count()
+
+    #(doc) "Total lifetime spend across the selected customers."
+    `Total_Lifetime_Spend` is sum(Lifetime_spend)
+
+    #(doc) "Average lifetime spend per customer."
+    `Average_Lifetime_Spend` is avg(Lifetime_spend)
+
+    #(doc) "Average number of lifetime orders per customer."
+    `Average_Lifetime_Orders` is avg(Count_lifetime_orders)
+
+    #(doc) "Number of customers who have placed more than one order."
+    `Returning_Customer_Count` is count() { where: Customer_type = 'returning' }
+
+    #(doc) "Number of customers with only their first order so far."
+    `New_Customer_Count` is count() { where: Customer_type = 'new' }
+
+    #(doc) "Share of customers in the returning segment."
+    `Returning_Customer_Rate` is Returning_Customer_Count / Customer_Count
+
+}

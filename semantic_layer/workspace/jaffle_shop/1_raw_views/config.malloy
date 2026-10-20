@@ -1,0 +1,17 @@
+/// CUSTOMERS
+source: cafe_customers_raw is motherduck.table('marts.cafe_customers')
+
+/// LOCATIONS
+source: cafe_locations_raw is motherduck.table('marts.cafe_locations')
+
+/// ORDER ITEMS
+source: cafe_order_items_raw is motherduck.table('marts.cafe_order_items')
+
+/// ORDERS
+source: cafe_orders_raw is motherduck.table('marts.cafe_orders')
+
+/// PRODUCTS
+source: cafe_products_raw is motherduck.table('marts.cafe_products')
+
+/// SUPPLIES
+source: cafe_supplies_raw is motherduck.table('marts.cafe_supplies')

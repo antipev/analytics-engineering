@@ -14,8 +14,8 @@
         }
       ],
       "packages": [
-        { "name": "comics", "location": "./packages/comics" },
-        { "name": "jaffle_shop", "location": "./packages/jaffle_shop" }
+        { "name": "comics", "location": "./workspace/comics" },
+        { "name": "jaffle_shop", "location": "./workspace/jaffle_shop" }
       ]
     }
   ]
