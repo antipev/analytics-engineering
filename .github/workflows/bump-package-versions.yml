@@ -1,0 +1,208 @@
+name: Bump Package Versions
+
+on:
+  workflow_call:
+    secrets:
+      app_id:
+        required: true
+      private_key:
+        required: true
+    outputs:
+      bumped:
+        description: "List of all packages to deploy (bumped + already bumped)"
+        value: ${{ jobs.bump.outputs.bumped }}
+      changed:
+        description: "Whether any package was changed"
+        value: ${{ jobs.bump.outputs.changed }}
+      to_bump:
+        description: "List of packages that required bump"
+        value: ${{ jobs.bump.outputs.to_bump }}
+      already_bumped:
+        description: "List of packages already version-bumped"
+        value: ${{ jobs.bump.outputs.already_bumped }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    outputs:
+      bumped: ${{ steps.bump.outputs.bumped }}
+      changed: ${{ steps.bump.outputs.changed }}
+      to_bump: ${{ steps.bump.outputs.to_bump }}
+      already_bumped: ${{ steps.bump.outputs.already_bumped }}
+
+    steps:
+      - uses: actions/create-github-app-token@v1
+        id: app
+        with:
+          app-id: ${{ secrets.app_id }}
+          private-key: ${{ secrets.private_key }}
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+      - name: Detect and bump package versions
+        id: bump
+        run: |
+          set -Eeuo pipefail
+          chmod +x scripts/detect_changed_packages.py scripts/bump_versions.py
+
+          # Split a |||-delimited list into pkg_array.
+          # IFS cannot do this: it treats its value as a set of single
+          # characters, so IFS='|||' splits on each '|' and would break any
+          # path containing one.
+          split_pkgs() {
+            local rest="$1" item
+            pkg_array=()
+            while [ -n "$rest" ]; do
+              if [[ "$rest" == *"|||"* ]]; then
+                item="${rest%%|||*}"
+                rest="${rest#*|||}"
+              else
+                item="$rest"
+                rest=""
+              fi
+              [ -n "$item" ] && pkg_array+=("$item")
+            done
+          }
+
+          base="${{ github.event.before }}"
+          head="${{ github.sha }}"
+
+          echo "Detecting changed packages..."
+          out=$(scripts/detect_changed_packages.py "$base" "$head")
+
+          # Parse output using ||| as delimiter (handles spaces in paths)
+          to_bump=$(echo "$out" | grep '^TO_BUMP=' | cut -d= -f2-)
+          already_bumped=$(echo "$out" | grep '^ALREADY_BUMPED=' | cut -d= -f2-)
+
+          echo "TO_BUMP=$to_bump"
+          echo "ALREADY_BUMPED=$already_bumped"
+
+          if [ -z "$to_bump" ] && [ -z "$already_bumped" ]; then
+            echo "No changed packages detected; skipping bump."
+            echo "### No changed packages detected — skipping bump" >> $GITHUB_STEP_SUMMARY
+            echo "bumped=" >> $GITHUB_OUTPUT
+            echo "to_bump=" >> $GITHUB_OUTPUT
+            echo "already_bumped=" >> $GITHUB_OUTPUT
+            echo "changed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          bumped=""
+          if [ -n "$to_bump" ]; then
+            echo "Bumping versions for: $to_bump"
+            split_pkgs "$to_bump"
+            bumped_list=()
+            for pkg in "${pkg_array[@]}"; do
+              [ -z "$pkg" ] && continue
+              result=$(scripts/bump_versions.py "$pkg")
+              if [ -n "$result" ]; then
+                bumped_list+=("$result")
+              fi
+            done
+            # Join results with space
+            bumped="${bumped_list[*]}"
+          fi
+
+          # Combine bumped + already bumped for deployment
+          if [ -n "$already_bumped" ]; then
+            split_pkgs "$already_bumped"
+            for pkg in "${pkg_array[@]}"; do
+              [ -z "$pkg" ] && continue
+              # Read current version from publisher.json
+              if [ ! -f "$pkg/publisher.json" ]; then
+                echo "[warning] Skipping $pkg - publisher.json not found"
+                continue
+              fi
+              name=$(jq -r '.name' "$pkg/publisher.json" 2>/dev/null)
+              version=$(jq -r '.version' "$pkg/publisher.json" 2>/dev/null)
+              if [ -n "$name" ] && [ -n "$version" ] && [ "$version" != "null" ]; then
+                bumped="$bumped $pkg|$name|$version"
+              fi
+            done
+          fi
+
+          echo "bumped=$bumped" >> $GITHUB_OUTPUT
+          echo "to_bump=$to_bump" >> $GITHUB_OUTPUT
+          echo "already_bumped=$already_bumped" >> $GITHUB_OUTPUT
+          echo "changed=true" >> $GITHUB_OUTPUT
+
+          echo "### Bumped Packages" >> $GITHUB_STEP_SUMMARY
+          echo "$bumped" >> $GITHUB_STEP_SUMMARY
+          echo "Bumped packages (for deployment): $bumped"
+
+      - name: Auto Commit Bumped Versions
+        env:
+          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -Eeu pipefail
+          
+          # Configure git to use the token
+          git config user.name "credible-bot[bot]"
+          git config user.email "credible-bot[bot]@users.noreply.github.com"
+          
+          # Add and commit changes
+          git add -A
+          
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git commit -m "chore: auto-bump package versions [skip ci]"
+
+          # Retry push with exponential backoff to handle race conditions
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          PUSH_URL="https://x-access-token:${{ steps.app.outputs.token }}@github.com/${{ github.repository }}.git"
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo "Attempting to push (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES)..."
+            
+            # Pull latest changes with rebase
+            if ! git pull --rebase origin ${{ github.ref_name }}; then
+              echo "⚠️ Rebase failed, checking for conflicts..."
+              
+              # Check if it's a conflict
+              if git status | grep -q "rebase in progress"; then
+                echo "❌ Rebase conflict detected"
+                git rebase --abort
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                SLEEP_TIME=$((2 ** RETRY_COUNT))
+                echo "Retrying in ${SLEEP_TIME}s..."
+                sleep $SLEEP_TIME
+                continue
+              fi
+            fi
+            
+            # Try to push
+            if git push "$PUSH_URL" HEAD:${{ github.ref_name }}; then
+              echo "✅ Successfully pushed version bumps"
+              exit 0
+            else
+              echo "⚠️ Push failed"
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                SLEEP_TIME=$((2 ** RETRY_COUNT))
+                echo "Retrying in ${SLEEP_TIME}s..."
+                sleep $SLEEP_TIME
+              fi
+            fi
+          done
+          
+          echo "❌ Failed to push after $MAX_RETRIES attempts"
+          exit 1

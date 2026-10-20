@@ -1,7 +1,7 @@
 {
   "name": "comics",
   "version": "0.1.0",
-  "description": "Layered XKCD comics and calendar semantic package over data_warehouse_demo.marts",
+  "description": "Layered XKCD comics and calendar semantic package over MotherDuck data_warehouse_demo.marts",
   "explores": [
     "3_explores/comics_explore.malloy"
   ]
