@@ -11,3 +11,10 @@ package-lock.concurrent-update-lock
 *.duckdb.wal
 **/.user.yml
 profiles.yml
+
+# Local files kept on disk but not versioned
+.venv/
+*.ipynb
+ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_query.sql
+ingestion/orchestration_dagster/README.md
+transformation_dbt/domain_data_products/README.md

@@ -14,13 +14,13 @@
 "The ability to leverage AI to create assets that appreciate (not depreciate) in value the more that they are used is a business and economics game-changer."
 
 
-![Analytic module deployment benefits](Analytic%20Module%20Deployment%20Benefits.png)
+![Analytic module deployment benefits](PICTURES/Analytic%20Module%20Deployment%20Benefits.png)
 
  - `digitalization`, which is the integration of digital technologies such as web-based apps, mobile devices, and sensors into existing operational processes
 
  - `Digital Transformation`, on the other hand, leverages the growing wealth of Big Data and Internet of Things (IoT) with continuously learning AI **to uncover new customer, product, service, and operational insights (propensities)** to **reinvent the organization's business models**, to derive and drive new sources of customer, product, and operational value.
 
-![Digital Transformation](Digital%20Transformation.png)
+![Digital Transformation](PICTURES/Digital%20Transformation.png)
 
 
 
@@ -245,7 +245,7 @@ sequenceDiagram
 
 Jaffle Shop follows the same handoff pattern: six chained seeds replace the XKCD API/R2 step, and the final seed triggers its transformation job.
 
-![Dagster global asset lineage for the XKCD and Jaffle Shop domains](Dagster%20Lineage.png)
+![Dagster global asset lineage for the XKCD and Jaffle Shop domains](PICTURES/Dagster%20Lineage.png)
 
 *Dagster's global asset lineage shows both domains, from raw assets through their final marts.*
 
@@ -290,7 +290,7 @@ flowchart LR
 | MotherDuck raw table | `ingest.raw_comics_v2` |
 | Cloud Run | One container serves the Dagster UI and dbt docs |
 
-![dbt docs showing the xkcd_duckdb.raw_comics_v2 source, its description, columns, and Dagster asset key](DBT%20Documentation.png)
+![dbt docs showing the xkcd_duckdb.raw_comics_v2 source, its description, columns, and Dagster asset key](PICTURES/DBT%20Documentation.png)
 
 *dbt docs expose source descriptions, columns, and the linked Dagster asset key.*
 
@@ -299,6 +299,7 @@ flowchart LR
 ### Local
 
 ```bash
+cp .env.example .env        # repository root; fill in GCP, R2, and MotherDuck values
 cd ingestion/orchestration_dagster
 uv sync
 source .venv/bin/activate
@@ -307,11 +308,11 @@ dg dev
 
 Open `http://localhost:3000` and run `comics_ingestion_job` or `jaffle_shop_ingestion_job`.
 
-Set `MOTHERDUCK_TOKEN`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` in `ingestion/orchestration_dagster/.env` before running ingestion jobs.
+`.env` in the repository root is the single environment file. Dagster loads it through `python-dotenv` (the loader walks up from the project directory), and `scripts/bootstrap_gcp.sh` / `scripts/deploy_dagster.sh` source it automatically. For dbt CLI commands, load it into the shell first from the repository root: `set -a; source .env; set +a`.
 
 ## Repository map
 
-This map lists all 82 tracked files (plus local-only and generated paths) so the repository can be audited file by file. Exact paths are relative to the repository root. Generated artifacts and local secrets are listed separately at the end and are not part of the deployed system.
+This map lists all 86 tracked files (plus local-only and generated paths) so the repository can be audited file by file. Exact paths are relative to the repository root. Generated artifacts and local secrets are listed separately at the end and are not part of the deployed system.
 
 ### Root, build, and deployment
 
@@ -326,8 +327,10 @@ This map lists all 82 tracked files (plus local-only and generated paths) so the
 | `.gitignore` | Excludes local secrets, virtualenvs, databases, logs, and generated artifacts from version control. |
 | `scripts/bootstrap_gcp.sh` | One-time GCP bootstrap: enables APIs, grants secret access to runtime/build service accounts, creates `wake-shared-secret`, upserts two log-based metrics, an email notification channel, and two alert policies. |
 | `scripts/deploy_dagster.sh` | Release command: builds with `cloudbuild.yaml`, deploys the Cloud Run service with scale-to-zero settings and secrets, waits for readiness, verifies dbt docs, and creates or updates both Cloud Scheduler jobs. |
-| `Dagster Lineage.png` | Screenshot evidence of global Dagster asset lineage across both domains. |
-| `DBT Documentation.png` | Screenshot evidence of generated dbt docs, source metadata, and Dagster asset links. |
+| `PICTURES/Analytic Module Deployment Benefits.png` | Illustration of the business value of analytic module deployment. |
+| `PICTURES/Digital Transformation.png` | Illustration of digital transformation versus digitalization. |
+| `PICTURES/Dagster Lineage.png` | Screenshot evidence of global Dagster asset lineage across both domains. |
+| `PICTURES/DBT Documentation.png` | Screenshot evidence of generated dbt docs, source metadata, and Dagster asset links. |
 
 ### Container runtime (`docker/`)
 
@@ -348,8 +351,8 @@ This map lists all 82 tracked files (plus local-only and generated paths) so the
 | --- | --- |
 | `ingestion/orchestration_dagster/pyproject.toml` | Python project metadata and dependencies: Dagster, dagster-dbt, dbt-duckdb, DuckDB, pandas, boto3, and python-dotenv; also configures the Dagster project root. |
 | `ingestion/orchestration_dagster/uv.lock` | Locked dependency graph used by `uv sync` for local development. |
-| `ingestion/orchestration_dagster/README.md` | Default Dagster project instructions for installing dependencies and running `dg dev`. |
-| `ingestion/orchestration_dagster/.gitignore` | Excludes the local virtualenv, `.env`, Dagster state, and caches from version control. |
+| `ingestion/orchestration_dagster/README.md` | Local Dagster scaffold README (untracked); the repository-level README is authoritative. |
+| `ingestion/orchestration_dagster/.gitignore` | Excludes the local virtualenv, Dagster state, and caches from version control. |
 | `ingestion/orchestration_dagster/.dg/telemetry.yaml` | Dagster CLI project telemetry metadata; not used at runtime. |
 | `ingestion/orchestration_dagster/src/orchestration_dagster/__init__.py` | Marks the Python package. |
 | `ingestion/orchestration_dagster/src/orchestration_dagster/definitions.py` | Dagster entry point: loads all definitions from the `defs/` folder using `load_from_defs_folder`. |
@@ -366,9 +369,9 @@ This map lists all 82 tracked files (plus local-only and generated paths) so the
 | `ingestion/orchestration_dagster/src/orchestration_dagster/defs/transformation_dbt/template_vars.py` | Locates the dbt project, resolves the default target (`motherduck_dev`), and provides the FQN-to-group helper used by the dbt component and job factory. |
 | `ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/schema_config_v1.json` | Legacy XKCD raw schema (11 columns, no `extra_parts`); retained for schema-version compatibility. |
 | `ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/schema_config_v2.json` | Active XKCD raw schema (12 columns, including `extra_parts`) used to validate records before loading into `raw_comics_v2`. |
-| `ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_ingestion.ipynb` | Exploratory notebook for developing and debugging ingestion logic; not deployed. |
-| `ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_dbt.ipynb` | Exploratory notebook for querying dbt/MotherDuck outputs; not deployed. |
-| `ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_query.sql` | Ad hoc MotherDuck inspection and cleanup queries used during development; not executed by a job. |
+| `ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_ingestion.ipynb` | Local scratch notebook for developing and debugging ingestion logic; untracked, not deployed. |
+| `ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_dbt.ipynb` | Local scratch notebook for querying dbt/MotherDuck outputs; untracked, not deployed. |
+| `ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_query.sql` | Local ad hoc MotherDuck inspection and cleanup queries; untracked, not executed by a job. |
 | `ingestion/orchestration_dagster/tests/__init__.py` | Marks the test package; no test modules are currently implemented. |
 
 ### dbt project (`transformation_dbt/domain_data_products/`)
@@ -377,15 +380,13 @@ This map lists all 82 tracked files (plus local-only and generated paths) so the
 
 | Path | Purpose |
 | --- | --- |
-| `transformation_dbt/.user.yml` | Local dbt user configuration outside the project directory. |
 | `transformation_dbt/domain_data_products/dbt_project.yml` | dbt project definition: name, profile, model/macro/seed paths, `raw` seed schema, `staging`/`intermediate`/`marts` model folders, and strict static analysis. |
-| `transformation_dbt/domain_data_products/profiles.yml` | Connection targets: `motherduck_dev` (default cloud DWH), `duckdb_dev` (local file), and a BigQuery `dev` target. |
+| `transformation_dbt/domain_data_products/profiles.yml` | Local, gitignored connection targets: `motherduck_dev` (default cloud DWH), `duckdb_dev` (local file), and a BigQuery `dev` target. |
 | `transformation_dbt/domain_data_products/packages.yml` | Declares the `dbt-labs/dbt_utils` dependency. |
 | `transformation_dbt/domain_data_products/package-lock.yml` | Locks the resolved dbt package versions installed by `dbt deps`. |
-| `transformation_dbt/domain_data_products/README.md` | Upstream Jaffle Shop template README; the repository-level README is the authoritative guide. |
+| `transformation_dbt/domain_data_products/README.md` | Local upstream Jaffle Shop scaffold README (untracked); the repository-level README is authoritative. |
 | `transformation_dbt/domain_data_products/.gitignore` | Excludes dbt build artifacts, packages, logs, and local user state. |
-| `transformation_dbt/domain_data_products/.user.yml` | Local dbt user configuration for the project. |
-| `transformation_dbt/domain_data_products/.vscode/extensions.json` | Recommends the dbt VS Code extension for local development. |
+| `transformation_dbt/domain_data_products/.user.yml` | Local, gitignored dbt user ID file (untracked). |
 
 #### Macros
 
@@ -464,7 +465,7 @@ These paths are intentionally excluded from version control or the image. They a
 
 | Path | Purpose |
 | --- | --- |
-| `ingestion/orchestration_dagster/.env`, `.env` | Local credentials and overrides; never commit or include in the image. |
+| `.env` | The single local environment file (copy of `.env.example`): credentials and overrides; never commit or include in the image. |
 | `transformation_dbt/domain_data_products/target/` | dbt docs, catalog, manifest, and run results; regenerated by `dbt docs generate`/`dbt build`. |
 | `transformation_dbt/domain_data_products/dbt_packages/` | Installed dbt packages; recreated by `dbt deps`. |
 | `transformation_dbt/domain_data_products/logs/` | dbt run logs. |
