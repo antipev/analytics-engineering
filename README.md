@@ -300,13 +300,16 @@ flowchart LR
 
 ```bash
 cp .env.example .env        # repository root; fill in GCP, R2, and MotherDuck values
-cd ingestion/orchestration_dagster
-uv sync
+uv venv .venv --python 3.10 # first time only; one environment for the whole repo
 source .venv/bin/activate
+uv sync --project ingestion/orchestration_dagster --active
+cd ingestion/orchestration_dagster
 dg dev
 ```
 
 Open `http://localhost:3000` and run `comics_ingestion_job` or `jaffle_shop_ingestion_job`.
+
+The repository-root `.venv` is the single environment for the whole project. It contains Dagster, dbt, and every dependency from `ingestion/orchestration_dagster/uv.lock`. Because `uv` normally creates the environment next to `pyproject.toml`, dependency updates must be synced into the active root environment with `uv sync --project ingestion/orchestration_dagster --active`. Run `dg` and `dbt` from `ingestion/orchestration_dagster` so Dagster finds its `defs` directory.
 
 `.env` in the repository root is the single environment file. Dagster loads it through `python-dotenv` (the loader walks up from the project directory), and `scripts/bootstrap_gcp.sh` / `scripts/deploy_dagster.sh` source it automatically. For dbt CLI commands, load it into the shell first from the repository root: `set -a; source .env; set +a`.
 

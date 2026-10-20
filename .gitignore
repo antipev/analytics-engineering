@@ -13,7 +13,7 @@ package-lock.concurrent-update-lock
 profiles.yml
 
 # Local files kept on disk but not versioned
-.venv/
+.venv
 *.ipynb
 ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_query.sql
 ingestion/orchestration_dagster/README.md
