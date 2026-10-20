@@ -11,7 +11,7 @@ clean-targets:
 
 seeds:
   domain_data_products:
-    +schema: raw
+    +schema: ingest_jaffle_shop
 
 models:
   domain_data_products:

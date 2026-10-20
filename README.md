@@ -181,7 +181,7 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 ### Monthly request path
 
 1. **08:00 UTC on the 1st:** Cloud Scheduler sends an authenticated `POST /wake` to the wake API. Cloud Run starts the container from zero if needed, restores Dagster state from R2, and starts nginx, Dagster, the wake API, and Litestream.
-2. **Ingestion:** the wake API launches `comics_ingestion_job` idempotently. Dagster downloads only missing comics from the XKCD API into R2, then loads them into `MotherDuck.ingest.raw_comics_v2`.
+2. **Ingestion:** the wake API launches `comics_ingestion_job` idempotently. Dagster downloads only missing comics from the XKCD API into R2, then loads them into `MotherDuck.ingest_xkcd.raw_comics_v2`.
 3. **Transformation:** materializing `raw_comics_v2` fires the asset sensor, which launches `comics_transformation_job`. dbt builds and tests the staging, intermediate, and mart models in MotherDuck.
 4. **Confirmation:** `/wake` waits for both runs and returns success only when both succeed. At **12:00 UTC**, a second Scheduler job calls `GET /wake/status` as a dead-man's-switch; failures produce structured logs and email alerts.
 5. **Idle:** the service scales back to zero. MotherDuck keeps the analytics tables; R2 keeps raw JSON and the replicated Dagster run/schedule state.
@@ -196,7 +196,7 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 - On the first day of each month at 08:00 UTC, Cloud Scheduler calls `POST /wake`. The endpoint launches `comics_ingestion_job` and waits for the sensor-triggered transformation. The in-code Dagster schedule exists but is stored as `STOPPED`; Cloud Scheduler is the single monthly trigger.
 - The job reads the latest comic number from the XKCD API, compares it with the IDs already stored in R2, and downloads only the gaps. Comic #404 is skipped because the site returns its "not found" page for that ID.
 - Downloads use a 20-worker thread pool and write one JSON file per comic under `raw_comics/`. A `full_refresh` option re-downloads everything.
-- A second asset loads missing R2 files into MotherDuck in batches as `ingest.raw_comics_v2`. Raw JSON remains in R2; MotherDuck holds the queryable copy.
+- A second asset loads missing R2 files into MotherDuck in batches as `ingest_xkcd.raw_comics_v2`. Raw JSON remains in R2; MotherDuck holds the queryable copy.
 - dbt moves the data through `stg_comics` and `int_comics` into an incremental `comics` mart keyed by comic number, plus a `calendar` dimension.
 
 **Outputs.** A tested, documented comics mart ready for keyword and trend analysis. Sources: [xkcd.com](https://xkcd.com/) · [JSON API](https://xkcd.com/info.0.json).
@@ -208,7 +208,7 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 **Why it matters.** Operators need one consistent view of revenue, order composition, customer lifetime value, product and store performance, and supply costs instead of manual spreadsheet reporting.
 
 **Pipeline.**
-- Six CSV seeds from the [dbt Jaffle Shop project](https://github.com/dbt-labs/jaffle-shop) load into MotherDuck's `raw` schema: `raw_customers`, `raw_orders`, `raw_items`, `raw_stores`, `raw_products`, and `raw_supplies`.
+- Six CSV seeds from the [dbt Jaffle Shop project](https://github.com/dbt-labs/jaffle-shop) load into MotherDuck's `ingest_jaffle_shop` schema: `raw_customers`, `raw_orders`, `raw_items`, `raw_stores`, `raw_products`, and `raw_supplies`.
 - The seed assets are chained in that order to avoid concurrent schema creation and write conflicts.
 - Materializing the final seed, `raw_supplies`, triggers `jaffle_shop_transformation_job`.
 - dbt builds staging models and six `cafe_` marts: `cafe_customers`, `cafe_orders`, `cafe_order_items`, `cafe_products`, `cafe_locations`, and `cafe_supplies`.
@@ -287,7 +287,7 @@ flowchart LR
 | `dg list defs` | Resolves four domain-scoped jobs, two sensors, and one schedule |
 | `dbt parse --target motherduck_dev` | Validates the dbt project |
 | Local XKCD run | 3,302 comics loaded and 3,302 rows in the comics mart; counts grow with each scheduled run |
-| MotherDuck raw table | `ingest.raw_comics_v2` |
+| MotherDuck raw table | `ingest_xkcd.raw_comics_v2` |
 | Cloud Run | One container serves the Dagster UI and dbt docs |
 
 ![dbt docs showing the xkcd_duckdb.raw_comics_v2 source, its description, columns, and Dagster asset key](PICTURES/DBT%20Documentation.png)
@@ -380,7 +380,7 @@ This map lists all 86 tracked files (plus local-only and generated paths) so the
 
 | Path | Purpose |
 | --- | --- |
-| `transformation_dbt/domain_data_products/dbt_project.yml` | dbt project definition: name, profile, model/macro/seed paths, `raw` seed schema, `staging`/`intermediate`/`marts` model folders, and strict static analysis. |
+| `transformation_dbt/domain_data_products/dbt_project.yml` | dbt project definition: name, profile, model/macro/seed paths, `ingest_jaffle_shop` seed schema, `staging`/`intermediate`/`marts` model folders, and strict static analysis. |
 | `transformation_dbt/domain_data_products/profiles.yml` | Local, gitignored connection targets: `motherduck_dev` (default cloud DWH), `duckdb_dev` (local file), and a BigQuery `dev` target. |
 | `transformation_dbt/domain_data_products/packages.yml` | Declares the `dbt-labs/dbt_utils` dependency. |
 | `transformation_dbt/domain_data_products/package-lock.yml` | Locks the resolved dbt package versions installed by `dbt deps`. |

@@ -19,7 +19,7 @@ domain_data_products:
       
     motherduck_dev:
       type: duckdb
-      path: "md:{{ env_var('MOTHERDUCK_DATABASE', 'xkcd') }}"
+      path: "md:{{ env_var('MOTHERDUCK_DATABASE', 'data_warehouse_demo') }}"
       schema: staging    # <--- Default base schema
       threads: 4
       token: "{{ env_var('MOTHERDUCK_TOKEN') }}"

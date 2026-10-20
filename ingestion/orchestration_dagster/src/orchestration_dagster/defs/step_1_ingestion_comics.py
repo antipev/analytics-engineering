@@ -65,7 +65,7 @@ def get_duckdb_connection(db_path: str | None = None):
     if os.getenv("DBT_TARGET") == "duckdb_dev":
       db_path = os.getenv("XKCD_DUCKDB_PATH", str(Path(__file__).parent / "data" / "xkcd.duckdb"))
     else:
-      db_name = os.getenv("MOTHERDUCK_DATABASE", "xkcd")
+      db_name = os.getenv("MOTHERDUCK_DATABASE", "data_warehouse_demo")
       db_path = f"md:{db_name}"
   con = duckdb.connect(db_path)
   return con
@@ -179,7 +179,7 @@ def step_1_ingestion_comics(context: dg.AssetExecutionContext, config: RefreshCo
     config, and inserts them into MotherDuck.
     """
     active_schema_version = "v2"
-    target_schema = "ingest"
+    target_schema = "ingest_xkcd"
     target_table = f"{target_schema}.raw_comics_{active_schema_version}"
 
     # 1. Open connections to R2 and MotherDuck.

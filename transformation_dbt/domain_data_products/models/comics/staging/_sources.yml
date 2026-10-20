@@ -2,8 +2,7 @@ version: 2
 
 sources:
   - name: xkcd_duckdb
-    database: xkcd
-    schema: ingest
+    schema: ingest_xkcd
     description: Raw xkcd data from DuckDB database
     tables:
       - name: raw_comics_v2
