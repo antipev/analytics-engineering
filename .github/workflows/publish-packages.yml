@@ -1,0 +1,91 @@
+name: Publish Packages
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "GitHub Environment to bind this publish to (enables its protection rules). Optional."
+        required: false
+        type: string
+        default: ""
+      packages:
+        description: "Space-separated list of packages to publish (format: path|name|version)"
+        required: true
+        type: string
+      set_latest:
+        description: "Whether to set as latest version"
+        required: false
+        type: boolean
+        default: true
+      cred_org:
+        description: "Organization name"
+        required: true
+        type: string
+      cred_env:
+        description: "Environment name"
+        required: true
+        type: string
+    secrets:
+      jwt_access_token:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+      
+      - name: Pull latest changes from bump job
+        run: |
+          git fetch origin ${{ github.ref_name }}
+          git checkout ${{ github.ref_name }}
+          git pull origin ${{ github.ref_name }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          npm install -g @credibledata/cred-cli
+
+      - name: Publish packages
+        id: publish
+        shell: bash
+        env:
+          ACCESS_TOKEN: ${{ secrets.jwt_access_token }}
+          ORGANIZATION_NAME: ${{ inputs.cred_org }}
+          ENVIRONMENT_NAME: ${{ inputs.cred_env }}
+          SET_LATEST: ${{ inputs.set_latest }}
+          PACKAGES: ${{ inputs.packages }}
+        run: |
+          set -Eeuo pipefail
+          chmod +x scripts/cred_publish.sh
+
+          # Validate packages input
+          if [ -z "$PACKAGES" ]; then
+            echo "No packages to publish"
+            exit 0
+          fi
+          
+          # Build command
+          if [ "$SET_LATEST" = "true" ]; then
+            SET_LATEST_FLAG="-L"
+          else
+            SET_LATEST_FLAG=""
+          fi
+          
+          # Call script (handles all logic: retry, error handling, summary)
+          scripts/cred_publish.sh \
+            -o "$ORGANIZATION_NAME" \
+            -E "$ENVIRONMENT_NAME" \
+            -a "$ACCESS_TOKEN" \
+            -p "$PACKAGES" \
+            $SET_LATEST_FLAG
