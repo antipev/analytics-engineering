@@ -1,0 +1,118 @@
+name: Deploy Publisher
+
+on:
+  workflow_run:
+    workflows: ["Bump and Publish Packages"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publisher-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_ID: my-1-st-project-training
+      REGION: northamerica-northeast1
+      SERVICE: malloy-publisher-mcp
+      IMAGE_NAME: gcr.io/my-1-st-project-training/malloy-publisher-mcp
+
+    steps:
+      - name: Check out canonical packages at the latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Check out Publisher build context
+        uses: actions/checkout@v4
+        with:
+          repository: antipev/analytics-malloy-publisher-rag
+          path: publisher
+          fetch-depth: 1
+
+      - name: Authenticate to Google Cloud with workload identity
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve immutable image tag
+        id: image
+        run: echo "tag=sha-$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Copy the semantic packages into the build context
+        working-directory: publisher
+        run: |
+          chmod +x ./scripts/sync_semantic_layer.sh
+          ./scripts/sync_semantic_layer.sh \
+            ../semantic_layer/workspace \
+            workspace/semantic_layer
+
+      - name: Build the Publisher image
+        working-directory: publisher
+        env:
+          IMAGE: ${{ env.IMAGE_NAME }}:${{ steps.image.outputs.tag }}
+        run: |
+          gcloud builds submit \
+            --project "$PROJECT_ID" \
+            --tag "$IMAGE" \
+            --quiet \
+            .
+
+      - name: Deploy the Cloud Run revision
+        env:
+          IMAGE: ${{ env.IMAGE_NAME }}:${{ steps.image.outputs.tag }}
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --image "$IMAGE" \
+            --platform managed \
+            --region "$REGION" \
+            --allow-unauthenticated \
+            --min-instances 0 \
+            --max-instances 3 \
+            --memory 4Gi \
+            --cpu 2 \
+            --cpu-boost \
+            --timeout 600 \
+            --port 5050 \
+            --set-secrets=MOTHERDUCK_TOKEN=motherduck-token:latest \
+            --quiet
+
+      - name: Smoke-test the deployed service
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --format='value(status.url)')
+
+          for attempt in $(seq 1 24); do
+            status=$(curl -fsS "${URL}/api/v0/status" || true)
+            if printf '%s' "$status" | grep -q '"operationalState":"serving"' &&
+               printf '%s' "$status" | grep -q '"comics"' &&
+               printf '%s' "$status" | grep -q '"jaffle_shop"'; then
+              echo "Publisher is serving both semantic packages."
+              exit 0
+            fi
+            echo "Waiting for Publisher (${attempt}/24)..."
+            sleep 10
+          done
+
+          echo "Publisher did not reach a serving state with both packages." >&2
+          exit 1
