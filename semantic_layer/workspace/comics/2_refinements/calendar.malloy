@@ -1,37 +1,37 @@
 import '../1_raw_views/config.malloy'
 
-#(doc) "Daily calendar dimension used for comic publication trends and date filtering."
+#(doc) "Daily calendar dimension used for comic publication trends and date filtering"
 source: calendar is calendar_raw extend {
 
   primary_key: _key_calendar
 
   rename:
-    #(doc) "Calendar date. Same value as the primary key."
+    #(doc) "Calendar date. Same value as the primary key"
     `Calendar_date` is `date`
 
-    #(doc) "Calendar year number."
+    #(doc) "Calendar year number"
     `Calendar_year` is `year`
 
-    #(doc) "Full month name."
+    #(doc) "Full month name"
     `Calendar_month` is `month`
 
-    #(doc) "Month and year label, for example Jan 2024."
+    #(doc) "Month and year label, for example Jan 2024"
     `Calendar_month_year` is `month_year`
 
-    #(doc) "ISO week number."
+    #(doc) "ISO week number"
     `Calendar_week` is `week`
 
-    #(doc) "Full day-of-week name."
+    #(doc) "Full day-of-week name"
     `Calendar_day_of_week` is `day_of_week`
 
-    #(doc) "Quarter number from 1 to 4."
+    #(doc) "Quarter number from 1 to 4"
     `Calendar_quarter` is `quarter_number`
 
-    #(doc) "Whether the date is in the past or the future."
+    #(doc) "Whether the date is in the past or the future"
     `Calendar_past_future` is `past_future`
 
   measure:
-    #(doc) "Number of calendar days in the selected period."
+    #(doc) "Number of calendar days in the selected period"
     `Day_Count` is count()
 
 }

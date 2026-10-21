@@ -3,64 +3,64 @@ import 'customers.malloy'
 import 'locations.malloy'
 import 'order_items.malloy'
 
-#(doc) "One row per Jaffle Shop order with customer, location, item, and revenue context."
+#(doc) "One row per Jaffle Shop order with customer, location, item, and revenue context"
 source: cafe_orders is cafe_orders_raw extend {
 
   primary_key: Order_id
 
   rename:
-    #(doc) "Unique identifier for the order."
+    #(doc) "Unique identifier for the order"
     `Order_id` is order_id
 
-    #(doc) "Store location where the order was placed."
+    #(doc) "Store location where the order was placed"
     `Location_id` is location_id
 
-    #(doc) "Customer who placed the order."
+    #(doc) "Customer who placed the order"
     `Customer_id` is customer_id
 
-    #(doc) "Order subtotal in cents."
+    #(doc) "Order subtotal in cents"
     `Subtotal_cents` is subtotal_cents
 
-    #(doc) "Tax paid in cents."
+    #(doc) "Tax paid in cents"
     `Tax_paid_cents` is tax_paid_cents
 
-    #(doc) "Order total in cents."
+    #(doc) "Order total in cents"
     `Order_total_cents` is order_total_cents
 
-    #(doc) "Order subtotal before tax."
+    #(doc) "Order subtotal before tax"
     `Subtotal` is subtotal
 
-    #(doc) "Tax paid on the order."
+    #(doc) "Tax paid on the order"
     `Tax_paid` is tax_paid
 
-    #(doc) "Order total including tax."
+    #(doc) "Order total including tax"
     `Order_total` is order_total
 
-    #(doc) "Date the order was placed."
+    #(doc) "Date the order was placed"
     `Order_date` is order_date
 
-    #(doc) "Supply cost to fulfil the order."
+    #(doc) "Supply cost to fulfil the order"
     `Order_cost` is order_cost
 
-    #(doc) "Sum of item prices before tax."
+    #(doc) "Sum of item prices before tax"
     `Order_items_subtotal` is order_items_subtotal
 
-    #(doc) "Number of food items in the order."
+    #(doc) "Number of food items in the order"
     `Count_food_items` is count_food_items
 
-    #(doc) "Number of drink items in the order."
+    #(doc) "Number of drink items in the order"
     `Count_drink_items` is count_drink_items
 
-    #(doc) "Number of items in the order."
+    #(doc) "Number of items in the order"
     `Count_order_items` is count_order_items
 
-    #(doc) "Whether the order contains food."
+    #(doc) "Whether the order contains food"
     `Is_food_order` is is_food_order
 
-    #(doc) "Whether the order contains a drink."
+    #(doc) "Whether the order contains a drink"
     `Is_drink_order` is is_drink_order
 
-    #(doc) "Sequence number of the order within the customer's history."
+    #(doc) "Sequence number of the order within the customer's history"
     `Customer_order_number` is customer_order_number
 
   join_one: cafe_customers on Customer_id = cafe_customers.Customer_id
@@ -68,37 +68,37 @@ source: cafe_orders is cafe_orders_raw extend {
   join_many: cafe_order_items on Order_id = cafe_order_items.Order_id
 
   measure:
-    #(doc) "Total number of orders."
+    #(doc) "Total number of orders"
     `Order_Count` is count()
 
-    #(doc) "Gross revenue including tax."
+    #(doc) "Gross revenue including tax"
     `Total_Revenue` is sum(Order_total)
 
-    #(doc) "Revenue before tax."
+    #(doc) "Revenue before tax"
     `Total_Subtotal` is sum(Subtotal)
 
-    #(doc) "Total tax collected."
+    #(doc) "Total tax collected"
     `Total_Tax_Paid` is sum(Tax_paid)
 
-    #(doc) "Average order value including tax."
+    #(doc) "Average order value including tax"
     `Average_Order_Value` is Total_Revenue / Order_Count
 
-    #(doc) "Total supply cost across the selected orders."
+    #(doc) "Total supply cost across the selected orders"
     `Total_Order_Cost` is sum(Order_cost)
 
-    #(doc) "Gross margin after supply cost, including tax."
+    #(doc) "Gross margin after supply cost, including tax"
     `Gross_Margin` is Total_Revenue - Total_Order_Cost
 
-    #(doc) "Total number of items sold."
+    #(doc) "Total number of items sold"
     `Total_Items` is sum(Count_order_items)
 
-    #(doc) "Average number of items per order."
+    #(doc) "Average number of items per order"
     `Average_Items_per_Order` is Total_Items / Order_Count
 
-    #(doc) "Number of orders containing food."
+    #(doc) "Number of orders containing food"
     `Food_Order_Count` is count() { where: Is_food_order }
 
-    #(doc) "Number of orders containing a drink."
+    #(doc) "Number of orders containing a drink"
     `Drink_Order_Count` is count() { where: Is_drink_order }
 
 }

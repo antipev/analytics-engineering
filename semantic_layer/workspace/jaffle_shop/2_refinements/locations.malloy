@@ -1,31 +1,31 @@
 import '../1_raw_views/config.malloy'
 
-#(doc) "Jaffle Shop store locations with tax rates and opening dates."
+#(doc) "Jaffle Shop store locations with tax rates and opening dates"
 source: cafe_locations is cafe_locations_raw extend {
 
   primary_key: Location_id
 
   rename:
-    #(doc) "Unique identifier for the store location."
+    #(doc) "Unique identifier for the store location"
     `Location_id` is location_id
 
-    #(doc) "Human-readable store location name."
+    #(doc) "Human-readable store location name"
     `Location_name` is location_name
 
-    #(doc) "Tax rate applied to orders at the location."
+    #(doc) "Tax rate applied to orders at the location"
     `Tax_rate` is tax_rate
 
-    #(doc) "Date the location opened."
+    #(doc) "Date the location opened"
     `Opened_date` is opened_date
 
   measure:
-    #(doc) "Total number of store locations."
+    #(doc) "Total number of store locations"
     `Location_Count` is count()
 
-    #(doc) "Average tax rate across the selected locations."
+    #(doc) "Average tax rate across the selected locations"
     `Average_Tax_Rate` is avg(Tax_rate)
 
-    #(doc) "Earliest opening date among the selected locations."
+    #(doc) "Earliest opening date among the selected locations"
     `Earliest_Opened_Date` is min(Opened_date)
 
 }

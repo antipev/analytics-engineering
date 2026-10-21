@@ -1,43 +1,43 @@
 import '../1_raw_views/config.malloy'
 
-#(doc) "Jaffle Shop supply catalogue with product mappings and supply costs."
+#(doc) "Jaffle Shop supply catalogue with product mappings and supply costs"
 source: cafe_supplies is cafe_supplies_raw extend {
 
   primary_key: Supply_uuid
 
   rename:
-    #(doc) "Unique identifier for the supply record."
+    #(doc) "Unique identifier for the supply record"
     `Supply_uuid` is supply_uuid
 
-    #(doc) "Business identifier for the supply."
+    #(doc) "Business identifier for the supply"
     `Supply_id` is supply_id
 
-    #(doc) "Product that uses this supply."
+    #(doc) "Product that uses this supply"
     `Product_id` is product_id
 
-    #(doc) "Supply name."
+    #(doc) "Supply name"
     `Supply_name` is supply_name
 
-    #(doc) "Cost of the supply."
+    #(doc) "Cost of the supply"
     `Supply_cost` is supply_cost
 
-    #(doc) "Whether the supply is perishable."
+    #(doc) "Whether the supply is perishable"
     `Is_perishable_supply` is is_perishable_supply
 
   measure:
-    #(doc) "Total number of supply records."
+    #(doc) "Total number of supply records"
     `Supply_Count` is count()
 
-    #(doc) "Total supply cost across the selected records."
+    #(doc) "Total supply cost across the selected records"
     `Total_Supply_Cost` is sum(Supply_cost)
 
-    #(doc) "Average supply cost."
+    #(doc) "Average supply cost"
     `Average_Supply_Cost` is avg(Supply_cost)
 
-    #(doc) "Number of perishable supplies."
+    #(doc) "Number of perishable supplies"
     `Perishable_Supply_Count` is count() { where: Is_perishable_supply }
 
-    #(doc) "Share of supplies that are perishable."
+    #(doc) "Share of supplies that are perishable"
     `Perishable_Supply_Rate` is Perishable_Supply_Count / Supply_Count
 
 }
