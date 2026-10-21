@@ -43,6 +43,18 @@ workspace:
    `explores` array in `publisher.json` is the explicit allowlist of published
    explores.
 
+> **Publisher deprecation note (2026-10-21):** Publisher logs
+> `"explores" in publisher.json is deprecated` when it loads these packages.
+> The current behavior is preserved: each package still exposes exactly one
+> source (`comics_explore` and `cafe_explore`), and both return rows through
+> Publisher and Credible. The supported replacement is an `index.malloy` file at
+> the package root, but the migration is deliberately **not** part of TASK-09 or
+> GATE-10. It changes the published package surface and must be validated in both
+> serving paths before adoption. See TASK-09a in
+> `DOCUMENTATION/2_Plan_and_Implementation/7_PROJECT_1_Credible_GitHub_Implementation.md`
+> for the follow-up decision. Until then, keep `explores` and treat the warning
+> as expected.
+
 Each package directory is the publishable unit. It must contain `publisher.json`;
 `semantic_layer/publisher.config.json` is only a local Publisher configuration
 and is never uploaded to Credible.
