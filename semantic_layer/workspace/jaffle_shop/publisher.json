@@ -1,6 +1,6 @@
 {
   "name": "jaffle_shop",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Layered Jaffle Shop cafe semantic package over MotherDuck data_warehouse_demo.marts",
   "explores": [
     "3_explores/cafe_explore.malloy"
