@@ -3320,10 +3320,10 @@ If a package is changed to git-backed ownership, update this table before the ne
 
 > **Tag:** `REF-12` | **Type:** reference | **Status:** `N/A` | **Use:** review during every task; update if the facts change.
 
-These are true as of 2026-10-21:
+These are true as of 2026-10-22:
 
 1. **`explores` is deprecated but still supported.** Both packages keep the field; see §9A.3. A future Publisher release that removes it is a breaking change.
-2. **Publisher deployment automation is partially proven.** The `workflow_dispatch` path is executed and deployed; the automatic `workflow_run` path after a real package publish and the rollback rehearsal are still open.
+2. **Publisher deployment automation is proven but not regression-tested.** Both the manual `workflow_dispatch` and automatic `workflow_run` paths, the rollback rehearsal, and the failed-publish safety case were exercised on 2026-10-21/22. There is no scheduled canary; the post-deploy smoke test and traffic assertion are the ongoing checks.
 3. **The Publisher RAG/MCP context is still built separately.** Publisher serves all three packages, but the build-time context index intentionally covers only `thelook_ecommerce` until the compiler supports `motherduck.table(...)`.
 4. **Git-backed modeling is not enrolled.** `gitModelingEnabled` is `false`, all repository fields are `null`, and `gitRepositoryRegistered` is `false`.
 5. **Git-backed enrollment is support-assisted.** Creating a repository and installing the App does not register it to the environment.
@@ -3331,7 +3331,7 @@ These are true as of 2026-10-21:
 7. **The status endpoint does not expose a top-level `loadErrors` field.** Use the startup `load_errors=0` line plus a real query for runtime verification.
 8. **`TASK-09a` used the existing owner-level service account.** WIF, `GCP_WORKLOAD_IDENTITY_PROVIDER`, and `GCP_SERVICE_ACCOUNT` are configured, but `malloy-analytics-user` still has `roles/owner`; replacing it with the narrower build/deploy roles remains a cleanup item.
 9. **The local Publisher `publisher_data` cache can mask a package change.** Start with `--init` when validating a new image or a new config; a stale cache reported `packages=0` during the 2026-10-21 check until the process was restarted.
-10. **The Publisher `/api/v0/status` response serializes the MotherDuck access token.** The local status payload included `motherduckConnection.accessToken`; do not paste raw status output into logs, issues, or chat. Restrict or redact the endpoint before exposing it beyond the current trusted boundary.
+10. **The public Publisher `/api/v0/status` response exposes the MotherDuck access token.** The response contains `environments[].connections[].motherduckConnection.accessToken`, and the Cloud Run service currently grants `roles/run.invoker` to `allUsers`. Do not paste raw status output into logs, issues, or chat. Redact that field or restrict the endpoint before treating the service as a public endpoint.
 
 ---
 

@@ -36,7 +36,7 @@ This repository applies that discipline to two independent domains on one shared
 
 
 
-Each domain owns its ingestion path, dbt models, marts, and business logic. Both pipelines are implemented end to end; the semantic and AI layers are roadmap items.
+Each domain owns its ingestion path, dbt models, marts, and business logic. Both pipelines and the Malloy semantic layer are implemented end to end; the AI trend-analysis agent remains a roadmap item.
 
 [Public access](#public-access) · [Architecture](#architecture) · [Orchestration](#orchestration-and-delivery) · [Quick start](#quick-start) · [Repository map](#repository-map)
 
@@ -55,8 +55,8 @@ Each domain owns its ingestion path, dbt models, marts, and business logic. Both
 | **XKCD** | How have technology, science, and gaming themes changed since 2005, and where should game development invest next? | XKCD JSON API | Incremental `comics` mart and `calendar` dimension |
 | **Jaffle Shop** | How is a cafe performing across sales, customers, products, stores, and supplies? | Six CSV seeds from dbt Labs | `cafe_orders`, `cafe_customers`, `cafe_order_items`, `cafe_products`, `cafe_locations`, and `cafe_supplies` marts |
 
-- **Implemented:** both ingestion and transformation pipelines, tests, documentation, orchestration, and containerized deployment.
-- **Roadmap:** Malloy semantic layer and an AI trend-analysis agent for XKCD.
+- **Implemented:** both ingestion and transformation pipelines, tests, documentation, orchestration, containerized deployment, the Malloy semantic layer, and automated Credible publishing plus Publisher rebuild/deploy.
+- **Roadmap:** AI trend-analysis agent for XKCD.
 
 ## Architecture
 
@@ -108,7 +108,7 @@ flowchart TB
 
   MD[("MotherDuck data warehouse (DWH)<br/>raw, staging and mart tables")]
 
-  MOLLOY["Semantic Layer (planned)<br/>Malloy Publisher over MotherDuck mart tables<br/>reusable metrics and dimensions from version-controlled Malloy models"]
+  MOLLOY["Semantic Layer<br/>Malloy Publisher over MotherDuck mart tables<br/>reusable metrics and dimensions from version-controlled Malloy models"]
 
   USER_DAG -->|"opens UI / docs"| NGINX
   USER_SQL -->|"SQL queries"| MD
@@ -149,7 +149,7 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 
 > **Cloud Run service, not a Cloud Run Job.** The deployed compute is a request-driven Cloud Run **service** with `min-instances=0` and `max-instances=1`. Cloud Scheduler wakes it over HTTPS; it is not a batch Cloud Run Job. See [Orchestration and delivery](#orchestration-and-delivery).
 
-> **GitHub's role: source control, not CI/CD.** GitHub stores the Dagster code, dbt project, Dockerfile, release scripts, and seed CSVs. This repository has no GitHub Actions workflow or Cloud Build GitHub trigger. A developer clones or pulls the repository and runs `scripts/deploy_dagster.sh` manually from a local terminal; `gcloud builds submit .` uploads that working tree to Cloud Build, and the resulting image is deployed to Cloud Run. Automating this path is a roadmap item, not current behavior.
+> **GitHub's role: source control, not Dagster CI/CD.** GitHub stores the Dagster code, dbt project, Dockerfile, release scripts, and seed CSVs. No GitHub Actions workflow builds or deploys the Dagster service, and there is no Cloud Build GitHub trigger for it. A developer clones or pulls the repository and runs `scripts/deploy_dagster.sh` manually from a local terminal; `gcloud builds submit .` uploads that working tree to Cloud Build, and the resulting image is deployed to Cloud Run. Automating this Dagster path is a roadmap item. The separate semantic-layer publish/deploy path is automated; see [`semantic_layer/README.md`](./semantic_layer/README.md).
 
 > **How Secret Manager is populated.** `scripts/bootstrap_gcp.sh` is a shell script run manually once from a developer terminal — not by Docker or Cloud Build. It enables Secret Manager, creates `wake-shared-secret`, and grants the runtime and build identities access. The MotherDuck and R2 secrets must already exist; create them manually with `gcloud secrets create` or the Google Cloud console. Cloud Build then consumes `motherduck-token` at build time, while `scripts/deploy_dagster.sh` reads `wake-shared-secret` and passes runtime secret references to Cloud Run.
 
@@ -172,7 +172,7 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 | **Orchestration** | Dagster runtime (webserver + GraphQL API) | Defines assets, jobs, the monthly schedule, and two asset sensors; serves the UI and GraphQL API; stores run and schedule state in SQLite. |
 | **Transformation** | dbt runtime | Executes only when Dagster launches the dbt assets; builds staging/intermediate/mart models and runs tests against the DWH. |
 | **Data warehouse (DWH)** | MotherDuck on DuckDB (free tier 10 GB for individuals) | Stores queryable raw, staging, and mart tables and executes dbt SQL. |
-| **Semantic layer** | Malloy Publisher (planned) | Publishes reusable metrics and dimensions over the MotherDuck mart tables. Malloy models are version-controlled in GitHub; the publisher is not implemented yet. |
+| **Semantic layer** | Malloy Publisher + Credible | Publishes reusable metrics and dimensions over the MotherDuck mart tables, managed from the `semantic_layer/workspace/` packages and deployed automatically after a successful Credible publish. |
 | **Object storage** | Cloudflare R2 (free tier up to 10 GB) | Two logical zones in one bucket: `raw_comics/` stores raw XKCD JSON, and `dagster_home/` stores Litestream backups of Dagster's SQLite state. |
 | **State protection** | Litestream + restore script | Replicates SQLite continuously and restores run history and schedule state before Dagster starts on a cold instance. |
 | **Configuration** | Secret Manager + environment variables | `bootstrap_gcp.sh`, run manually, creates `wake-shared-secret` and grants IAM; MotherDuck and R2 secrets must exist beforehand. Cloud Build reads `motherduck-token` for build-time dbt docs; the deploy script reads `wake-shared-secret` and injects runtime secret references into Cloud Run. No secret is baked into the image. |
@@ -451,6 +451,20 @@ This map lists all 86 tracked files (plus local-only and generated paths) so the
 | `transformation_dbt/domain_data_products/seeds/raw_products.csv` | Jaffle Shop product seed, loaded as `raw.raw_products`. |
 | `transformation_dbt/domain_data_products/seeds/raw_supplies.csv` | Jaffle Shop supply seed, loaded as `raw.raw_supplies`; materializing it triggers the Jaffle transformation sensor. |
 
+### Semantic layer (`semantic_layer/`)
+
+| Path | Purpose |
+| --- | --- |
+| `semantic_layer/workspace/comics/` | Credible/Publisher package for the XKCD domain: `publisher.json`, raw views, refinements, and `comics_explore`. |
+| `semantic_layer/workspace/jaffle_shop/` | Credible/Publisher package for the Jaffle Shop domain: `publisher.json`, raw views, refinements, and `cafe_explore`. |
+| `semantic_layer/publisher.config.json` | Local Publisher configuration; not uploaded to Credible or copied into the deployed image. |
+| `semantic_layer/README.md` | Package layout, connection setup, publishing rules, and the `explores` deprecation note. |
+| `.github/workflows/deploy.yaml` | On a push to `semantic_layer/workspace/**`, bumps changed package versions, publishes them to Credible, and commits the version bump with `[skip ci]`. |
+| `.github/workflows/publish-packages.yml` | Reusable Credible publish job invoked by `deploy.yaml`. |
+| `.github/workflows/bump-package-versions.yml` | Reusable version-bump job that detects changed packages and commits the new `publisher.json` versions. |
+| `.github/workflows/deploy-publisher.yml` | After a successful publish, rebuilds the Publisher image from `analytics-malloy-publisher-rag`, deploys it to Cloud Run, routes 100% of traffic to the new revision, and runs the smoke test. |
+| `scripts/bump_versions.py`, `scripts/detect_changed_packages.py`, `scripts/cred_publish.sh` | Helper scripts used by the publish workflows. |
+
 ### Documentation
 
 | Path | Purpose |
@@ -479,6 +493,5 @@ These paths are intentionally excluded from version control or the image. They a
 
 ## Roadmap
 
-- **Malloy semantic layer** — a publisher for reusable metrics and dimensions over the MotherDuck mart tables, with Malloy models version-controlled in GitHub. Work in progress.
-- **AI trend-analysis agent for XKCD** — consumes the comics mart to produce trend analyses and strategic input for game development. Work in progress.
-- **Automated CI/CD** — add a GitHub Actions workflow or Cloud Build GitHub trigger to validate, build, and deploy on push. The current release is manual from a developer terminal.
+- **AI trend-analysis agent for XKCD** — consumes the comics mart to produce trend analyses and strategic input for game development. Not implemented yet.
+- **Dagster release automation** — the Dagster image is still built and deployed manually with `scripts/deploy_dagster.sh`. Semantic-layer publish/deploy is already automated by GitHub Actions; extending that pattern to the Dagster service remains optional work.
