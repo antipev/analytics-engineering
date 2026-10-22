@@ -1,3 +1,4 @@
+# Local planning docs; never publish or include in images
 DOCUMENTATION/
 .vscode/
 .env

@@ -136,7 +136,9 @@ This map inventories the repository's tracked files and the local-only or genera
 - **`.github/workflows/deploy-publisher.yml`** — After a successful publish, rebuilds the Publisher image from `analytics-malloy-publisher-rag`, deploys it to Cloud Run, routes 100% of traffic to the new revision, and runs the smoke test.
 - **`scripts/bump_versions.py`, `scripts/detect_changed_packages.py`, `scripts/cred_publish.sh`** — Helper scripts used by the publish workflows.
 
-## Documentation
+## Local documentation (not versioned)
+
+`DOCUMENTATION/` is gitignored and kept only in the local checkout. None of these files are in GitHub or the deployed image.
 
 - **`DOCUMENTATION/1_Research/1_Cloud Storage Selection.md`** — Research and decision record for the cloud storage choice.
 - **`DOCUMENTATION/2_Plan_and_Implementation/0_PREPARATION.md`** — Preparation notes, prerequisites, and environment setup.
