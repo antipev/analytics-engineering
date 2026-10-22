@@ -24,16 +24,16 @@
 
 
 
-# Analytics Engineering — XKCD & Jaffle Shop
+# Analytics Engineering (XKCD & Jaffle Shop example)
 
-`Analytics engineering` turns raw, messy data into clean, tested, documented datasets. Analytics engineers package this work as reusable analytic modules that teams can consume for business outcomes.
+`Analytics engineering` turns raw, messy data into clean, tested, documented datasets. Analytics engineers package this work as **reusable analytic modules** that teams can consume for business outcomes.
+
 
 This repository applies that discipline to two independent domains on one shared platform:
 - Dagster for orchestration,
 - MotherDuck/DuckDB for storage,
 - dbt for transformation, and
 - Cloud Run for delivery.
-
 
 
 Each domain owns its ingestion path, dbt models, marts, and business logic. Both pipelines and the Malloy semantic layer are implemented end to end; the AI trend-analysis agent remains a roadmap item.
@@ -47,6 +47,8 @@ Each domain owns its ingestion path, dbt models, marts, and business logic. Both
 | Dagster UI | https://analytics-dagster-bolcwt6srq-nn.a.run.app/runs |
 | dbt docs | https://analytics-dagster-bolcwt6srq-nn.a.run.app/dbt-docs/ |
 | Health check | https://analytics-dagster-bolcwt6srq-nn.a.run.app/server_info |
+| Malloy semantic layer (Publisher) | https://malloy-publisher-mcp-bolcwt6srq-nn.a.run.app |
+| Credible workspace (sign-in required) | https://maxantipev.admin.credibledata.com/workspaces/workspace_demo |
 
 ## At a glance
 
