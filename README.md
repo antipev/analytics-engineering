@@ -194,6 +194,10 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 
 **Why it matters.** Tracking themes year by year helps identify topics with adoption potential, reducing the financial risk of new game concepts.
 
+![xkcd.com comic #1017, "Backward in Time"](PICTURES/Comics.png)
+
+*[xkcd.com](https://xkcd.com/) is the source for this domain; the JSON API provides each comic's title, date, and transcript.*
+
 **Pipeline.**
 - On the first day of each month at 08:00 UTC, Cloud Scheduler calls `POST /wake`. The endpoint launches `comics_ingestion_job` and waits for the sensor-triggered transformation. The in-code Dagster schedule exists but is stored as `STOPPED`; Cloud Scheduler is the single monthly trigger.
 - The job reads the latest comic number from the XKCD API, compares it with the IDs already stored in R2, and downloads only the gaps. Comic #404 is skipped because the site returns its "not found" page for that ID.
@@ -208,6 +212,10 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 **Business question.** How is the cafe performing across sales, customers, products, stores, and supplies?
 
 **Why it matters.** Operators need one consistent view of revenue, order composition, customer lifetime value, product and store performance, and supply costs instead of manual spreadsheet reporting.
+
+![The Jaffle Shop project on GitHub](PICTURES/JaffleShop.png)
+
+*The [dbt Labs Jaffle Shop](https://github.com/dbt-labs/jaffle-shop) sample project is the source for the cafe domain: its six CSV seeds load into `ingest_jaffle_shop`.*
 
 **Pipeline.**
 - Six CSV seeds from the [dbt Jaffle Shop project](https://github.com/dbt-labs/jaffle-shop) load into MotherDuck's `ingest_jaffle_shop` schema: `raw_customers`, `raw_orders`, `raw_items`, `raw_stores`, `raw_products`, and `raw_supplies`.

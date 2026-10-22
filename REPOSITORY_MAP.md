@@ -17,6 +17,8 @@ This map inventories the repository's tracked files and the local-only or genera
 - **`PICTURES/Analytic Module Deployment Benefits.png`** — Illustration of the business value of analytic module deployment.
 - **`PICTURES/Digital Transformation.png`** — Illustration of digital transformation versus digitalization.
 - **`PICTURES/Dagster Lineage.png`** — Screenshot evidence of global Dagster asset lineage across both domains.
+- **`PICTURES/Comics.png`** — Screenshot of xkcd.com, the source site for the comics domain.
+- **`PICTURES/JaffleShop.png`** — Screenshot of the dbt Labs Jaffle Shop repository, the source of the cafe domain seeds.
 - **`PICTURES/DBT Documentation.png`** — Screenshot evidence of generated dbt docs, source metadata, and Dagster asset links.
 - **`PICTURES/Credible.png`** — Screenshot of the versioned `comics` package in Credible.
 - **`PICTURES/Malloy Publisher.png`** — Screenshot of the `comics_explore` query and results in Malloy Publisher.
