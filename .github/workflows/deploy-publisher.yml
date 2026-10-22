@@ -95,6 +95,40 @@ jobs:
             --set-secrets=MOTHERDUCK_TOKEN=motherduck-token:latest \
             --quiet
 
+      - name: Route 100% of traffic to the new revision
+        run: |
+          REVISION=$(gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --format='value(status.latestCreatedRevisionName)')
+          echo "New revision: ${REVISION}"
+
+          # gcloud run deploy normally routes to the new revision, but a stale
+          # control-plane response has been observed to report the old revision
+          # as serving. Make the routing explicit, then assert it before the
+          # smoke test so the test cannot pass against the previous revision.
+          gcloud run services update-traffic "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --to-revisions="${REVISION}=100" \
+            --quiet
+
+          for attempt in $(seq 1 24); do
+            ACTIVE=$(gcloud run services describe "$SERVICE" \
+              --project "$PROJECT_ID" \
+              --region "$REGION" \
+              --format='value(status.traffic[0].revisionName)')
+            if [ "$ACTIVE" = "$REVISION" ]; then
+              echo "Revision ${ACTIVE} is serving 100% of traffic."
+              exit 0
+            fi
+            echo "Waiting for ${REVISION} to receive traffic (${attempt}/24); active=${ACTIVE}..."
+            sleep 5
+          done
+
+          echo "Traffic did not move to ${REVISION}." >&2
+          exit 1
+
       - name: Smoke-test the deployed service
         run: |
           URL=$(gcloud run services describe "$SERVICE" \
