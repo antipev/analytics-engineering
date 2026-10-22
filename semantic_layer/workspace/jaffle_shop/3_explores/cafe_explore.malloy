@@ -23,3 +23,7 @@ source: cafe_explore is cafe_orders extend {
   *
   private: cafe_customers, cafe_locations
 }
+
+// TASK-09a negative test: intentionally invalid Malloy. Reverted immediately.
+run: cafe_explore -> {
+  aggregate: Order_Count
