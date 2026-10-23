@@ -25,5 +25,5 @@ semantic_layer/.mcp.json
 
 *.ipynb
 ingestion/orchestration_dagster/src/orchestration_dagster/defs/data/test_query.sql
-ingestion/orchestration_dagster/README.md
-transformation_dbt/domain_data_products/README.md
+ingestion/orchestration_dagster/DAGSTER_PROJECT_SETUP.md
+transformation_dbt/domain_data_products/DBT_PROJECT.md

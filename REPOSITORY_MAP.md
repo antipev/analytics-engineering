@@ -1,11 +1,11 @@
 # Repository map
 
-This map inventories the repository's tracked files and the local-only or generated paths, so the repository can be audited file by file. Exact paths are relative to the repository root. Generated artifacts and local secrets are listed separately at the end and are not part of the deployed system. Return to [README.md](README.md).
+This map inventories the repository's tracked files and the local-only or generated paths, so the repository can be audited file by file. Exact paths are relative to the repository root. Generated artifacts and local secrets are listed separately at the end and are not part of the deployed system. Return to [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md).
 
 ## Root, build, and deployment
 
-- **`README.md`** — Project overview, component diagram, architecture, run instructions, and validation evidence.
-- **`REPOSITORY_MAP.md`** — File-by-file inventory of the repository, split out of `README.md`.
+- **`PROJECT_OVERVIEW.md`** — Project overview, component diagram, architecture, run instructions, and validation evidence.
+- **`REPOSITORY_MAP.md`** — File-by-file inventory of the repository, split out of `PROJECT_OVERVIEW.md`.
 - **`Dockerfile`** — Builds the Python 3.12 runtime image: installs nginx, supervisor, Litestream, and pinned Python dependencies; copies code; runs `dbt deps`; generates dbt docs at build time with an optional BuildKit secret.
 - **`.dockerignore`** — Keeps secrets, virtualenvs, generated dbt/Dagster state, notebooks, and `DOCUMENTATION/` out of the image build context.
 - **`cloudbuild.yaml`** — Cloud Build pipeline: enables BuildKit, pulls `motherduck-token` from Secret Manager, builds the `linux/amd64` image, and pushes it to Container Registry.
@@ -39,7 +39,7 @@ This map inventories the repository's tracked files and the local-only or genera
 
 - **`ingestion/orchestration_dagster/pyproject.toml`** — Python project metadata and dependencies: Dagster, dagster-dbt, dbt-duckdb, DuckDB, pandas, boto3, and python-dotenv; also configures the Dagster project root.
 - **`ingestion/orchestration_dagster/uv.lock`** — Locked dependency graph used by `uv sync` for local development.
-- **`ingestion/orchestration_dagster/README.md`** — Local Dagster scaffold README (untracked); the repository-level README is authoritative.
+- **`ingestion/orchestration_dagster/DAGSTER_PROJECT_SETUP.md`** — Local Dagster project setup notes (untracked): dependency install with `uv`/`pip` and `dg dev`; the repository-level `PROJECT_OVERVIEW.md` is authoritative.
 - **`ingestion/orchestration_dagster/.gitignore`** — Excludes the local virtualenv, Dagster state, and caches from version control.
 - **`ingestion/orchestration_dagster/.dg/telemetry.yaml`** — Dagster CLI project telemetry metadata; not used at runtime.
 - **`ingestion/orchestration_dagster/src/orchestration_dagster/__init__.py`** — Marks the Python package.
@@ -70,7 +70,7 @@ This map inventories the repository's tracked files and the local-only or genera
 - **`transformation_dbt/domain_data_products/profiles.yml`** — Local, gitignored connection targets: `motherduck_dev` (default cloud DWH), `duckdb_dev` (local file), and a BigQuery `dev` target.
 - **`transformation_dbt/domain_data_products/packages.yml`** — Declares the `dbt-labs/dbt_utils` dependency.
 - **`transformation_dbt/domain_data_products/package-lock.yml`** — Locks the resolved dbt package versions installed by `dbt deps`.
-- **`transformation_dbt/domain_data_products/README.md`** — Local upstream Jaffle Shop scaffold README (untracked); the repository-level README is authoritative.
+- **`transformation_dbt/domain_data_products/DBT_PROJECT.md`** — Local upstream Jaffle Shop scaffold notes (untracked): what the project is and `dbt build`; the repository-level `PROJECT_OVERVIEW.md` is authoritative.
 - **`transformation_dbt/domain_data_products/.gitignore`** — Excludes dbt build artifacts, packages, logs, and local user state.
 - **`transformation_dbt/domain_data_products/.user.yml`** — Local, gitignored dbt user ID file (untracked).
 
@@ -143,7 +143,7 @@ Every mart reads its `intermediate/int_cafe_*` counterpart and keeps the inherit
 - **`semantic_layer/workspace/comics/`** — Credible/Publisher package for the XKCD domain: `publisher.json`, raw views, refinements, and `comics_explore`.
 - **`semantic_layer/workspace/jaffle_shop/`** — Credible/Publisher package for the Jaffle Shop domain: `publisher.json`, raw views, the six `cafe_*` refinements, `2_refinements/bridge.malloy`, and the `cafe_explore` + `cafe_bridge_explore` explores. The bridge explore joins each bridge key to the mart's own id (`_Key_cafe_orders = cafe_orders.Order_id`), reading `marts` only; the keys are defined once in `intermediate/int_cafe_*` and published as the trailing `_key_cafe_*` columns of each mart, which is why every mart refinement declares `primary_key: _key_cafe_<table>`.
 - **`semantic_layer/publisher.config.json`** — Local Publisher configuration; not uploaded to Credible or copied into the deployed image.
-- **`semantic_layer/README.md`** — Package layout, connection setup, publishing rules, and the `explores` deprecation note.
+- **`semantic_layer/MALLOY_SEMANTIC_LAYER.md`** — Package layout, connection setup, publishing rules, and the `explores` deprecation note.
 - **`.github/workflows/deploy.yaml`** — On a push to `semantic_layer/workspace/**`, bumps changed package versions, publishes them to Credible, and commits the version bump with `[skip ci]`.
 - **`.github/workflows/publish-packages.yml`** — Reusable Credible publish job invoked by `deploy.yaml`.
 - **`.github/workflows/bump-package-versions.yml`** — Reusable version-bump job that detects changed packages and commits the new `publisher.json` versions.

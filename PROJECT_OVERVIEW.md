@@ -1,3 +1,5 @@
+*Project overview: what the platform is, how it is built, how it is released, and the evidence that it runs in production. File-by-file inventory: [REPOSITORY_MAP.md](REPOSITORY_MAP.md).*
+
 # Why?
 
 
@@ -151,7 +153,7 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 
 > **Cloud Run service, not a Cloud Run Job.** The deployed compute is a request-driven Cloud Run **service** with `min-instances=0` and `max-instances=1`. Cloud Scheduler wakes it over HTTPS; it is not a batch Cloud Run Job. See [Orchestration and delivery](#orchestration-and-delivery).
 
-> **GitHub's role: source control, and the Dagster release path.** GitHub stores the Dagster code, dbt project, Dockerfile, release scripts, and seed CSVs. A merge to `main` that touches the orchestration, dbt, docker or build inputs runs `.github/workflows/deploy-dagster.yml`: `validate` loads the Dagster definitions and parses dbt, then `deploy` refuses to ship over a live run and runs `scripts/deploy_dagster.sh`, which builds with `gcloud builds submit .`, deploys the image and asserts the new revision is serving 100% of traffic. `scripts/deploy_dagster.sh` is still the whole release, so it remains the **break-glass** path when Actions is unavailable — run from a local checkout, it skips the definition check and the live-run guard. The semantic-layer publish/deploy path is automated separately; see [`semantic_layer/README.md`](./semantic_layer/README.md).
+> **GitHub's role: source control, and the Dagster release path.** GitHub stores the Dagster code, dbt project, Dockerfile, release scripts, and seed CSVs. A merge to `main` that touches the orchestration, dbt, docker or build inputs runs `.github/workflows/deploy-dagster.yml`: `validate` loads the Dagster definitions and parses dbt, then `deploy` refuses to ship over a live run and runs `scripts/deploy_dagster.sh`, which builds with `gcloud builds submit .`, deploys the image and asserts the new revision is serving 100% of traffic. `scripts/deploy_dagster.sh` is still the whole release, so it remains the **break-glass** path when Actions is unavailable — run from a local checkout, it skips the definition check and the live-run guard. The semantic-layer publish/deploy path is automated separately; see [`semantic_layer/MALLOY_SEMANTIC_LAYER.md`](./semantic_layer/MALLOY_SEMANTIC_LAYER.md).
 
 > **How Secret Manager is populated.** `scripts/bootstrap_gcp.sh` is a shell script run manually once from a developer terminal — not by Docker or Cloud Build. It enables Secret Manager, creates `wake-shared-secret`, and grants the runtime and build identities access. The MotherDuck and R2 secrets must already exist; create them manually with `gcloud secrets create` or the Google Cloud console. Cloud Build then consumes `motherduck-token` at build time, while `scripts/deploy_dagster.sh` reads `wake-shared-secret` and passes runtime secret references to Cloud Run.
 
@@ -516,7 +518,7 @@ Gate 7 is the one that matters for the business question, and it is the one no w
 | `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT` | repository secrets | gates 4–6 — keyless auth to Cloud Build and Cloud Run |
 | `CRED_ORG`, `CRED_ENV` (falls back to the older `CRED_PROJECT`), `SET_LATEST` | repository variables | gate 3 — target organization and environment, and whether the version becomes latest |
 
-The package-side rules that make this train safe (immutable versions, one owner per package, no cross-repository symlinks) are in [semantic_layer/README.md](semantic_layer/README.md#credible-publishing).
+The package-side rules that make this train safe (immutable versions, one owner per package, no cross-repository symlinks) are in [semantic_layer/MALLOY_SEMANTIC_LAYER.md](semantic_layer/MALLOY_SEMANTIC_LAYER.md#credible-publishing).
 
 ## Validation
 
