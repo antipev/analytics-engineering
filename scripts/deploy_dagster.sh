@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Normal path: merge to main. `.github/workflows/deploy-dagster.yml` validates the
+# definitions, refuses to deploy over a live run, then runs this file.
+# But this file is what runs, so use it directly only when CI is broken (break-glass):
+# it skips the definition check and the live-run guard.
 # Build and deploy the Dagster Cloud Run service, then upsert the two Cloud
 # Scheduler jobs:
 #   dagster-comics-monthly       08:00 UTC on the 1st -> POST /wake
@@ -67,6 +71,31 @@ gcloud run deploy "$SERVICE" --quiet \
   --concurrency=200 \
   --set-env-vars="DAGSTER_HOME=/tmp/dagster_home,DAGSTER_R2_BUCKET=${BUCKET},DAGSTER_R2_PREFIX=${PREFIX},AWS_REGION=auto,MOTHERDUCK_DATABASE=data_warehouse_demo,WAKE_TIMEOUT_SECONDS=1500,WAKE_POLL_INTERVAL_SECONDS=10,DAGSTER_GRAPHQL_URL=http://127.0.0.1:3000/graphql,DAGSTER_INGESTION_JOB=comics_ingestion_job,DAGSTER_TRANSFORMATION_JOB=comics_transformation_job" \
   --set-secrets="MOTHERDUCK_TOKEN=motherduck-token:latest,R2_ACCOUNT_ID=r2-account-id:latest,R2_ACCESS_KEY_ID=r2-access-key-id:latest,R2_SECRET_ACCESS_KEY=r2-secret-access-key:latest,WAKE_SHARED_SECRET=wake-shared-secret:latest"
+
+# `gcloud run deploy` leaves an existing traffic pin in place, still exits 0 and even
+# prints the pinned revision as "serving 100 percent", so after a
+# `--to-revisions=<name>=100` drill it ships nothing. Clear the pin and assert that the
+# revision just created is the one serving; a green script must mean a live deploy.
+LATEST_REVISION="$(gcloud run services describe "$SERVICE" \
+  --project="$PROJECT_ID" \
+  --region="$REGION" \
+  --format='value(status.latestCreatedRevisionName)')"
+
+gcloud run services update-traffic "$SERVICE" --quiet \
+  --project="$PROJECT_ID" \
+  --region="$REGION" \
+  --to-latest
+
+read -r TRAFFIC_LATEST TRAFFIC_REVISION TRAFFIC_PERCENT < <(gcloud run services describe "$SERVICE" \
+  --project="$PROJECT_ID" \
+  --region="$REGION" \
+  --format='value(status.traffic[0].latestRevision,status.traffic[0].revisionName,status.traffic[0].percent)')
+
+if [[ "$TRAFFIC_LATEST" != "True" || "$TRAFFIC_REVISION" != "$LATEST_REVISION" || "$TRAFFIC_PERCENT" != "100" ]]; then
+  echo "[deploy] ERROR: traffic is not on ${LATEST_REVISION} (latest=${TRAFFIC_LATEST:-?} revision=${TRAFFIC_REVISION:-?} percent=${TRAFFIC_PERCENT:-?})" >&2
+  exit 1
+fi
+echo "[deploy] 100% of traffic on ${LATEST_REVISION}"
 
 SERVICE_URL="$(gcloud run services describe "$SERVICE" \
   --project="$PROJECT_ID" \

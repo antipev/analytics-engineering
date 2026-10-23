@@ -137,16 +137,33 @@ jobs:
             --format='value(status.url)')
 
           for attempt in $(seq 1 24); do
-            status=$(curl -fsS "${URL}/api/v0/status" || true)
-            if printf '%s' "$status" | grep -q '"operationalState":"serving"' &&
-               printf '%s' "$status" | grep -q '"comics"' &&
-               printf '%s' "$status" | grep -q '"jaffle_shop"'; then
-              echo "Publisher is serving both semantic packages."
+            body=$(curl -fsS "${URL}/api/v0/status" || true)
+            # The status body mentions a package by name even when it failed to load
+            # (the name appears inside loadErrors), so a substring grep passes on a
+            # broken package. Parse the document instead: every package must be in
+            # packages[] and loadErrors must be empty.
+            if printf '%s' "$body" | python3 -c '
+          import json, sys
+          try:
+              d = json.load(sys.stdin)
+          except Exception:
+              sys.exit(1)
+          if d.get("operationalState") != "serving":
+              sys.exit(1)
+          loaded = {p.get("name") for e in d.get("environments", []) for p in e.get("packages", [])}
+          missing = {"comics", "jaffle_shop"} - loaded
+          errors = d.get("loadErrors") or []
+          if missing or errors:
+              packages = [e.get("package") for e in errors]
+              print(f"missing={sorted(missing)} loadErrors={packages}", file=sys.stderr)
+              sys.exit(1)
+          '; then
+              echo "Publisher is serving both semantic packages with no load errors."
               exit 0
             fi
             echo "Waiting for Publisher (${attempt}/24)..."
             sleep 10
           done
 
-          echo "Publisher did not reach a serving state with both packages." >&2
+          echo "Publisher did not reach a serving state with both packages loaded." >&2
           exit 1
