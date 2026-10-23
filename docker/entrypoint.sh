@@ -15,6 +15,13 @@ mkdir -p "$DAGSTER_HOME/history/runs" "$DAGSTER_HOME/schedules"
 # dbt docs are already built into the image; no docs generation happens here.
 python /app/docker/restore_dagster_state.py
 
+# The restore script resolves which replica epoch is live and records it here.
+# Litestream must replicate into that same epoch, or a self-heal would leave the
+# new generation somewhere the next boot does not read.
+DAGSTER_REPLICA_EPOCH="$(cat "${DAGSTER_REPLICA_EPOCH_FILE:-/tmp/dagster_replica_epoch}" 2>/dev/null || true)"
+export DAGSTER_REPLICA_EPOCH="${DAGSTER_REPLICA_EPOCH:-g0}"
+echo "[entrypoint] Litestream replicates to ${DAGSTER_R2_PREFIX:-dagster_home}/${DAGSTER_REPLICA_EPOCH}"
+
 # A restored schedule may still be RUNNING from an older deployment. The code
 # default only applies to schedules without stored state, so force STOPPED
 # before the daemon can tick or race the /wake endpoint.
