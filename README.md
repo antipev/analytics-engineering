@@ -398,7 +398,7 @@ gh run list --limit 5
 
 # 3. the version Credible considers latest, and whether that version built
 cred get package  jaffle_shop | grep latestVersion
-cred get version  jaffle_shop 0.1.6 | grep -E 'buildStatus|indexStatus'
+cred get version  jaffle_shop <version> | grep -E 'buildStatus|indexStatus'
 
 # 4-5. which revision is actually serving
 gcloud run services describe malloy-publisher-mcp \
@@ -428,7 +428,7 @@ The chain, as it ran on 2026-10-22/23 (all values read back from GitHub, Credibl
 | 01:29:06 | 6 — smoke | log line `Publisher is serving both semantic packages.` |
 | after | 7 — data | `Stage = 'cafe_orders'` → 686 orders, 7,226.67 revenue, 997 items; bridge total 1,892 rows, matching `marts.cafe_bridge` and the dbt aggregates |
 
-Gate 7 is the one that matters for the business question, and it is the one no workflow asserts — which is why it is written down here as a manual step rather than assumed.
+Gate 7 is the one that matters for the business question, and it is the one no workflow asserts — which is why it is written down here as a manual step rather than assumed. The next release (`0.1.7`, revision `malloy-publisher-mcp-00033-c7z`) returned the same 686 / 7,226.67 / 997, which is the expected result: that commit only removed an unused dimension, so nothing downstream should move.
 
 ### Configuration the train needs
 
