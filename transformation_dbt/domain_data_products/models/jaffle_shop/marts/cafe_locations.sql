@@ -1,12 +1,12 @@
 {{ config(materialized='table', schema='marts') }}
 
 
-with
+WITH
 
-locations as (
+locations AS (
 
-    select * from {{ ref('stg_locations') }}
+    SELECT * FROM {{ ref('int_cafe_locations') }}
 
 )
 
-select * from locations
+SELECT * FROM locations

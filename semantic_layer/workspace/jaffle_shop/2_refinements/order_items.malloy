@@ -4,7 +4,7 @@ import 'products.malloy'
 #(doc) "One row per order item, enriched with product attributes and supply cost"
 source: cafe_order_items is cafe_order_items_raw extend {
 
-  primary_key: Order_item_id
+  primary_key: _key_cafe_order_items
 
   rename:
     #(doc) "Unique identifier for the order item"

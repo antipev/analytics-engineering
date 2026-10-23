@@ -15,3 +15,6 @@ source: cafe_products_raw is motherduck.table('marts.cafe_products')
 
 /// SUPPLIES
 source: cafe_supplies_raw is motherduck.table('marts.cafe_supplies')
+
+/// BRIDGE
+source: cafe_bridge_raw is motherduck.table('marts.cafe_bridge')

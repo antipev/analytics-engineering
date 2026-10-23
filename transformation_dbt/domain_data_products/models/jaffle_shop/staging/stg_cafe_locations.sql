@@ -1,33 +1,33 @@
 {{ config(materialized='view', schema='staging') }}
 
 
-with
+WITH
 
-source as (
+source AS (
 
     -- {# This references seed (CSV) data - try switching to {{ source('ecom', 'raw_stores') }} #}
-    select * from {{ source('ecom', 'raw_stores') }}
+    SELECT * FROM {{ source('ecom', 'raw_stores') }}
 
 ),
 
-renamed as (
+renamed AS (
 
-    select
+    SELECT
 
         ----------  ids
-        id as location_id,
+        id AS location_id,
 
         ---------- text
-        name as location_name,
+        name AS location_name,
 
         ---------- numerics
         tax_rate,
 
         ---------- timestamps
-        cast(opened_at as date) as opened_date
+        CAST(opened_at AS date) AS opened_date
 
-    from source
+    FROM source
 
 )
 
-select * from renamed
+SELECT * FROM renamed

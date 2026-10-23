@@ -1,26 +1,26 @@
 {{ config(materialized='view', schema='staging') }}
 
 
-with
+WITH
 
-source as (
+source AS (
 
     -- {# This references seed (CSV) data - try switching to {{ source('ecom', 'raw_items') }} #}
-    select * from {{ source('ecom', 'raw_items') }}
+    SELECT * FROM {{ source('ecom', 'raw_items') }}
 
 ),
 
-renamed as (
+renamed AS (
 
-    select
+    SELECT
 
         ----------  ids
-        id as order_item_id,
+        id AS order_item_id,
         order_id,
-        sku as product_id
+        sku AS product_id
 
-    from source
+    FROM source
 
 )
 
-select * from renamed
+SELECT * FROM renamed

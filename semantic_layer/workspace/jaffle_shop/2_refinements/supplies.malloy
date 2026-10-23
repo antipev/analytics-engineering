@@ -3,7 +3,7 @@ import '../1_raw_views/config.malloy'
 #(doc) "Jaffle Shop supply catalogue with product mappings and supply costs"
 source: cafe_supplies is cafe_supplies_raw extend {
 
-  primary_key: Supply_uuid
+  primary_key: _key_cafe_supplies
 
   rename:
     #(doc) "Unique identifier for the supply record"

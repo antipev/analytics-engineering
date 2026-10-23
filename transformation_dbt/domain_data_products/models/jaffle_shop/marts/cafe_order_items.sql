@@ -1,49 +1,49 @@
 {{ config(materialized='table', schema='marts') }}
 
 
-with
+WITH
 
-order_items as (
+order_items AS (
 
-    select * from {{ ref('stg_order_items') }}
-
-),
-
-
-orders as (
-
-    select * from {{ ref('stg_orders') }}
+    SELECT * FROM {{ ref('int_cafe_order_items') }}
 
 ),
 
-products as (
 
-    select * from {{ ref('stg_products') }}
+orders AS (
 
-),
-
-supplies as (
-
-    select * from {{ ref('stg_supplies') }}
+    SELECT * FROM {{ ref('int_cafe_orders') }}
 
 ),
 
-order_supplies_summary as (
+products AS (
 
-    select
+    SELECT * FROM {{ ref('int_cafe_products') }}
+
+),
+
+supplies AS (
+
+    SELECT * FROM {{ ref('int_cafe_supplies') }}
+
+),
+
+order_supplies_summary AS (
+
+    SELECT
         product_id,
 
-        sum(supply_cost) as supply_cost
+        SUM(supply_cost) AS supply_cost
 
-    from supplies
+    FROM supplies
 
-    group by 1
+    GROUP BY 1
 
 ),
 
-joined as (
+joined AS (
 
-    select
+    SELECT
         order_items.*,
 
         orders.order_date,
@@ -55,15 +55,31 @@ joined as (
 
         order_supplies_summary.supply_cost
 
-    from order_items
+    FROM order_items
 
-    left join orders on order_items.order_id = orders.order_id
+    LEFT JOIN orders ON order_items.order_id = orders.order_id
 
-    left join products on order_items.product_id = products.product_id
+    LEFT JOIN products ON order_items.product_id = products.product_id
 
-    left join order_supplies_summary
-        on order_items.product_id = order_supplies_summary.product_id
+    LEFT JOIN order_supplies_summary
+        ON order_items.product_id = order_supplies_summary.product_id
 
 )
 
-select * from joined
+SELECT
+    joined.* EXCLUDE (
+        _key_cafe_order_items,
+        _key_cafe_orders,
+        _key_cafe_products,
+        _key_cafe_customers,
+        _key_cafe_locations
+    ),
+
+    ---------- unified star schema keys (always last)
+    _key_cafe_order_items,
+    _key_cafe_orders,
+    _key_cafe_products,
+    _key_cafe_customers,
+    _key_cafe_locations
+
+FROM joined

@@ -3,7 +3,7 @@ import '../1_raw_views/config.malloy'
 #(doc) "Jaffle Shop store locations with tax rates and opening dates"
 source: cafe_locations is cafe_locations_raw extend {
 
-  primary_key: Location_id
+  primary_key: _key_cafe_locations
 
   rename:
     #(doc) "Unique identifier for the store location"

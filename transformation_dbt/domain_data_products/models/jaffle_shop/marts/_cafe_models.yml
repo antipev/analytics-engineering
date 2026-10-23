@@ -1,0 +1,227 @@
+version: 2
+
+models:
+  - name: cafe_customers
+    description: Customer overview data mart, offering key details for each unique customer. One row per customer.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "lifetime_spend_pretax + lifetime_tax_paid = lifetime_spend"
+    columns:
+      - name: customer_id
+        description: The unique key of the orders mart.
+        data_tests:
+          - not_null
+          - unique
+      - name: customer_name
+        description: Customers' full name.
+      - name: count_lifetime_orders
+        description: Total number of orders a customer has ever placed.
+      - name: first_order_date
+        description: The date when a customer placed their first order.
+      - name: last_order_date
+        description: The date of a customer's most recent order.
+      - name: lifetime_spend_pretax
+        description: The sum of all the pre-tax subtotals of every order a customer has placed.
+      - name: lifetime_tax_paid
+        description: The sum of all the tax portion of every order a customer has placed.
+      - name: lifetime_spend
+        description: The sum of all the order totals (including tax) that a customer has ever placed.
+      - name: customer_type
+        description: Options are 'new' or 'returning', indicating if a customer has ordered more than once or has only placed their first order to date.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ["new", "returning"]
+
+  - name: cafe_locations
+    description: Location overview data mart, offering key details for each location. One row per location.
+    columns:
+      - name: location_id
+        description: The unique key for each location.
+        data_tests:
+          - not_null
+          - unique
+      - name: location_name
+        description: The name of the location.
+      - name: tax_rate
+        description: The tax rate for the location.
+      - name: opened_date
+        description: The date the location opened.
+
+  - name: cafe_order_items
+    description: Order items data mart, offering key details for each item in an order including product information and supply costs. One row per order item.
+    columns:
+      - name: order_item_id
+        description: The unique key for each order item.
+        data_tests:
+          - not_null
+          - unique
+      - name: order_id
+        description: The corresponding order each order item belongs to.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('cafe_orders')
+                field: order_id
+      - name: product_id
+        description: The foreign key relating to the product ordered.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('cafe_products')
+                field: product_id
+      - name: order_date
+        description: The date the order was placed.
+      - name: product_name
+        description: The name of the product.
+      - name: product_price
+        description: The price of the product in USD.
+      - name: is_food_item
+        description: A boolean indicating if the product is a food item.
+      - name: is_drink_item
+        description: A boolean indicating if the product is a drink item.
+      - name: supply_cost
+        description: The total cost of supplies required to fulfill the product.
+
+  - name: cafe_orders
+    description: Order overview data mart, offering key details for each order including if it's a customer's first order and a food vs. drink item breakdown. One row per order.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "order_items_subtotal = subtotal"
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "order_total = subtotal + tax_paid"
+    columns:
+      - name: order_id
+        description: The unique key of the orders mart.
+        data_tests:
+          - not_null
+          - unique
+      - name: customer_id
+        description: The foreign key relating to the customer who placed the order.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('stg_cafe_customers')
+                field: customer_id
+      - name: order_total
+        description: The total amount of the order in USD including tax.
+      - name: order_date
+        description: The date the order was placed.
+      - name: order_cost
+        description: The sum of supply expenses to fulfill the order.
+      - name: is_food_order
+        description: A boolean indicating if this order included any food items.
+      - name: is_drink_order
+        description: A boolean indicating if this order included any drink items.
+
+  - name: cafe_products
+    description: Product overview data mart, offering key details for each product. One row per product.
+    columns:
+      - name: product_id
+        description: The unique key for each product.
+        data_tests:
+          - not_null
+          - unique
+      - name: product_name
+        description: The name of the product.
+      - name: product_type
+        description: The type of the product (e.g. food or drink).
+      - name: product_price
+        description: The price of the product in USD.
+
+  - name: cafe_supplies
+    description: Supplies data mart, offering supply cost details per product. One row per supply cost.
+    columns:
+      - name: supply_uuid
+        description: The unique key for each supply cost row.
+        data_tests:
+          - not_null
+          - unique
+      - name: product_id
+        description: The foreign key relating to the product.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('cafe_products')
+                field: product_id
+      - name: supply_cost
+        description: The cost of the supply item.
+
+
+  - name: cafe_bridge
+    description: >
+      Unified Star Schema bridge for the jaffle_shop data product, materialized as
+      a table in the marts layer. It is a pass-through of `int_cafe_bridge`: one row
+      per record per reporting table, `stage` naming the contributing table, the
+      keys of the tables the row can be joined to filled and every other key NULL.
+      No logic, filter or join is added here. The grain and the key contract are
+      defined and tested in `int_cafe_bridge`; the two singular tests
+      (assert_cafe_bridge_*) run against this table, so the materialized copy is
+      verified too.
+    columns:
+      - name: stage
+        description: Reporting table that contributed this row.
+      - name: _key_cafe_customers
+        description: Customer key, populated on customer, order and order-item rows.
+      - name: _key_cafe_locations
+        description: Location key, populated on location, order and order-item rows.
+      - name: _key_cafe_orders
+        description: Order key, populated on order and order-item rows.
+      - name: _key_cafe_order_items
+        description: Order-item key, populated on order-item rows only.
+      - name: _key_cafe_products
+        description: Product key, populated on product, order-item and supply rows.
+      - name: _key_cafe_supplies
+        description: Supply key, populated on supply rows only.
+
+unit_tests:
+  - name: test_supply_costs_sum_correctly
+    description: "Test that supply costs are correctly summed per product."
+    model: cafe_order_items
+    given:
+      - input: ref('int_cafe_supplies')
+        rows:
+          - {product_id: 1, supply_cost: 4.50}
+          - {product_id: 2, supply_cost: 3.50}
+          - {product_id: 2, supply_cost: 5.00}
+      - input: ref('int_cafe_products')
+        rows:
+          - {product_id: 1}
+          - {product_id: 2}
+      - input: ref('int_cafe_order_items')
+        rows:
+          - {order_id: 1, product_id: 1}
+          - {order_id: 2, product_id: 2}
+          - {order_id: 2, product_id: 2}
+      - input: ref('int_cafe_orders')
+        rows:
+          - {order_id: 1}
+          - {order_id: 2}
+    expect:
+      rows:
+        - {order_id: 1, product_id: 1, supply_cost: 4.50}
+        - {order_id: 2, product_id: 2, supply_cost: 8.50}
+        - {order_id: 2, product_id: 2, supply_cost: 8.50}
+  - name: test_order_items_compute_to_bools_correctly
+    description: "Test that the counts of drinks and food orders convert to booleans properly."
+    model: cafe_orders
+    given:
+      - input: ref('cafe_order_items')
+        rows:
+          - {order_id: 1, order_item_id: 1, is_drink_item: false, is_food_item: true}
+          - {order_id: 1, order_item_id: 2, is_drink_item: true, is_food_item: false}
+          - {order_id: 2, order_item_id: 3, is_drink_item: false, is_food_item: true}
+      - input: ref('int_cafe_orders')
+        rows:
+          - {order_id: 1}
+          - {order_id: 2}
+    expect:
+      rows:
+        - {order_id: 1, count_food_items: 1, count_drink_items: 1, is_drink_order: true, is_food_order: true}
+        - {order_id: 2, count_food_items: 1, count_drink_items: 0, is_drink_order: false, is_food_order: true}

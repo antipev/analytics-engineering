@@ -3,7 +3,7 @@ import '../1_raw_views/config.malloy'
 #(doc) "Jaffle Shop product catalogue with menu categories and pricing"
 source: cafe_products is cafe_products_raw extend {
 
-  primary_key: Product_id
+  primary_key: _key_cafe_products
 
   rename:
     #(doc) "Unique identifier for the product"

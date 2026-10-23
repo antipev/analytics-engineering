@@ -1,0 +1,14 @@
+import '../1_raw_views/config.malloy'
+
+#(doc) "Unified Star Schema bridge for Jaffle Shop: one row per record per reporting table, with every _key_ column side by side"
+source: cafe_bridge is cafe_bridge_raw extend {
+
+  rename:
+    #(doc) "Reporting table that contributed this row"
+    `Stage` is stage
+
+  measure:
+    #(doc) "Bridge rows in the selection; one row per record per reporting table"
+    `Bridge_Row_Count` is count()
+
+}

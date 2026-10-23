@@ -339,6 +339,71 @@ The repository-root `.venv` is the single environment for the whole project. It 
 
 `.env` in the repository root is the single environment file. Dagster loads it through `python-dotenv` (the loader walks up from the project directory), and `scripts/bootstrap_gcp.sh` / `scripts/deploy_dagster.sh` source it automatically. For dbt CLI commands, load it into the shell first from the repository root: `set -a; source .env; set +a`.
 
+### Run jaffle_shop models locally
+
+```bash
+set -a; source .env; set +a                     # from the repository root — provides the MotherDuck token
+source .venv/bin/activate
+cd transformation_dbt/domain_data_products      # the dbt project directory
+```
+
+Run these from the same dir/venv — they use the project's default target (`motherduck_dev`):
+
+```bash
+# the whole domain — 20 models, 72 data tests + 3 unit tests
+dbt test --select jaffle_shop
+
+# compile only
+dbt compile --select jaffle_shop
+
+# build = run + test in DAG order (the full gate for this project)
+dbt build --select jaffle_shop
+```
+
+Per-layer:
+
+```bash
+dbt test --select jaffle_shop.staging        # 19 nodes
+dbt test --select jaffle_shop.intermediate   # 35 nodes  (the _key_ + bridge contract)
+dbt test --select jaffle_shop.marts          # 28 nodes
+```
+
+Per-model (useful when reviewing one step at a time, e.g. the USS key layer):
+
+```bash
+dbt test --select int_cafe_customers int_cafe_locations int_cafe_products \
+                  int_cafe_supplies int_cafe_orders int_cafe_order_items
+dbt test --select cafe_orders+     # a model and everything downstream of it
+```
+
+Debugging variants:
+
+```bash
+dbt test --select jaffle_shop --fail-fast        # stop at the first failure
+dbt test --select jaffle_shop --store-failures   # write failing rows to the target schema for inspection
+dbt ls   --select jaffle_shop --resource-type test --output name   # list what would run, without running it
+```
+
+Expected output — `dbt test --select jaffle_shop` reports the 72 data tests plus the
+three unit tests; under `dbt build` the same selection also runs the 20 models, so the
+total is `PASS=95`:
+
+```
+Done. PASS=75 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=75
+```
+
+Two notes:
+- `--select jaffle_shop` is a **path** selector, so it covers all 20 models and every
+  test under `models/jaffle_shop/` plus the two singular tests in `tests/`. Seeds
+  (`dbt seed`) and the `ecom` source freshness are not included.
+- The per-layer counts add up to more than the domain total because the selectors
+  overlap: a `relationships` test that spans two layers is reachable from both, the
+  singular `assert_cafe_bridge_row_counts_match_sources` reads both the bridge and the
+  `cafe_*` marts (intermediate + marts), and the unit tests are reachable from the
+  layer that owns the tested model. The domain total is the authoritative number.
+
+Layer and model naming follow one rule per folder — `staging/stg_cafe_*`, `intermediate/int_cafe_*`, `marts/cafe_*`, each with a single schema YAML (`_stg_cafe_models.yml`, `_int_cafe_models.yml`, `_cafe_models.yml`). The key contract these intermediate tests enforce is documented in [8_PROJECT_1_USS_Implementation.md](DOCUMENTATION/2_Plan_and_Implementation/8_PROJECT_1_USS_Implementation.md).
+
 ## Repository map
 
 The full file-by-file inventory is in [REPOSITORY_MAP.md](REPOSITORY_MAP.md). It covers the root/build/deployment files, Docker runtime, Dagster orchestration, dbt project, semantic layer, documentation, and generated/local-only paths.

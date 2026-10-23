@@ -3,7 +3,7 @@ import '../1_raw_views/config.malloy'
 #(doc) "One row per Jaffle Shop customer with lifetime order and spend metrics"
 source: cafe_customers is cafe_customers_raw extend {
 
-  primary_key: Customer_id
+  primary_key: _key_cafe_customers
 
   rename:
     #(doc) "Unique identifier for the customer"

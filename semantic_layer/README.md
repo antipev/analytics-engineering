@@ -24,6 +24,7 @@ semantic_layer/
         ├── 1_raw_views/
         │   └── config.malloy       # MotherDuck table mappings
         ├── 2_refinements/
+        │   ├── bridge.malloy
         │   ├── customers.malloy
         │   ├── locations.malloy
         │   ├── order_items.malloy
@@ -31,6 +32,7 @@ semantic_layer/
         │   ├── products.malloy
         │   └── supplies.malloy
         └── 3_explores/
+            ├── cafe_bridge_explore.malloy
             └── cafe_explore.malloy
 ```
 
@@ -101,9 +103,68 @@ The following tables must exist before Publisher can load or query the packages:
 - `marts.cafe_orders`
 - `marts.cafe_products`
 - `marts.cafe_supplies`
+- `marts.cafe_bridge`
+
+The packages read the `marts` schema **only**: no `intermediate` and no `staging`
+dependency. Every `marts.cafe_*` table now publishes its own `_key_cafe_*` columns as
+its **last** columns (defined once in `intermediate/int_cafe_*`), and
+`marts.cafe_bridge` exposes the six keys side by side. Each refinement therefore
+declares `primary_key: _key_cafe_<table>`, and `cafe_bridge_explore` maps a bridge key
+to the mart's own id — `_Key_cafe_orders = cafe_orders.Order_id`, … ,
+`_Key_cafe_supplies = cafe_supplies.Supply_uuid` — so there is no helper view, no
+synthetic `_Key_cafe_*` dimension on the refinements, and no `intermediate` object.
 
 The MotherDuck token belongs in the repository-root `.env` as
 `MOTHERDUCK_TOKEN`. Never commit the token or a populated Publisher config.
+
+### VS Code Malloy extension and `.env`
+
+`.env` is only read by scripts that source it (`set -a; source ../.env; set +a`).
+Neither the Malloy CLI nor the VS Code extension loads `.env`; they resolve
+`{ "env": "MOTHERDUCK_TOKEN" }` from the **process environment** at connection
+time, and when the variable is missing the field is silently omitted. The
+connection then attempts `md:data_warehouse_demo` without a token and fails with:
+
+```
+Invalid Input Error: ... "Cannot connect to MotherDuck server: no token provided"
+```
+
+**Fix for WSL Remote (and any Remote-SSH setup):** put the export in the VS Code
+Server environment hook. It is sourced before the server starts, so the Malloy
+extension host inherits `MOTHERDUCK_TOKEN` no matter how the editor was
+launched, and `malloy-config.json` stays the only (secret-free) Malloy config:
+
+```sh
+# ~/.vscode-server/server-env-setup   (chmod 700)
+REPO_ENV_FILE=/path/to/analytics-engineering/.env
+if [ -f "$REPO_ENV_FILE" ]; then
+    MOTHERDUCK_TOKEN=$(
+        sed -n 's/^MOTHERDUCK_TOKEN=//p' "$REPO_ENV_FILE" |
+            head -n 1 | tr -d '\r' | sed 's/^"//; s/"$//'
+    )
+    [ -n "$MOTHERDUCK_TOKEN" ] && export MOTHERDUCK_TOKEN
+fi
+unset REPO_ENV_FILE
+```
+
+Restart the server (`Remote: Kill VS Code Server on Host`, or `wsl --shutdown`
+from Windows) — a window reload is not enough, the server process is reused.
+Verify with:
+
+```bash
+pgrep -f 'bootstrap-fork --type=extensionHost' | while read -r p; do
+  tr '\0' '\n' < "/proc/$p/environ" | grep -c '^MOTHERDUCK_TOKEN='
+done   # 1
+```
+
+`export MOTHERDUCK_TOKEN=...` in `~/.bashrc` does **not** work: the WSL server is
+started by `wsl.exe`, not by an interactive shell. See
+`DOCUMENTATION/2_Plan_and_Implementation/9_PROJECT_1_Malloy WSL.md` for the full
+root-cause analysis.
+
+A `malloy-config-local.json` with the literal token also works (Malloy merges it
+over the tracked file), but it duplicates the secret in a second file; the
+server hook keeps `.env` as the single source of truth.
 
 ## Local Publisher
 
@@ -122,8 +183,8 @@ npx --yes @malloy-publisher/server@0.0.244 \
 ```
 
 Open `http://localhost:4000`, confirm both packages load without errors, and
-query `comics_explore` and `cafe_explore` to verify MotherDuck connectivity.
-Stop the server with `Ctrl+C`.
+query `comics_explore`, `cafe_explore` and `cafe_bridge_explore` to verify
+MotherDuck connectivity. Stop the server with `Ctrl+C`.
 
 ## Credible publishing
 

@@ -1,0 +1,27 @@
+
+import '../2_refinements/bridge.malloy'
+import '../2_refinements/customers.malloy'
+import '../2_refinements/locations.malloy'
+import '../2_refinements/orders.malloy'
+import '../2_refinements/order_items.malloy'
+import '../2_refinements/products.malloy'
+import '../2_refinements/supplies.malloy'
+
+#(doc) "Unified Star Schema explore for Jaffle Shop: one entry point that reaches every reporting table through the bridge key that copies its primary key"
+#(doc) "Pick one Stage per query, or filter per stage with the pick pattern, so a NULL key in one stage never removes rows from another"
+source: cafe_bridge_explore is cafe_bridge extend {
+
+  join_one: cafe_customers on _key_cafe_customers = cafe_customers._key_cafe_customers
+  join_one: cafe_locations on _key_cafe_locations = cafe_locations._key_cafe_locations
+  join_one: cafe_orders on _key_cafe_orders = cafe_orders._key_cafe_orders
+  join_one: cafe_order_items on _key_cafe_order_items = cafe_order_items._key_cafe_order_items
+  join_one: cafe_products on _key_cafe_products = cafe_products._key_cafe_products
+  join_one: cafe_supplies on _key_cafe_supplies = cafe_supplies._key_cafe_supplies
+
+  dimension:
+    #(doc) "Order date; populated on order and order-item rows"
+    `Order_Date` is coalesce(cafe_orders.Order_date, cafe_order_items.Order_date)
+
+  
+
+}

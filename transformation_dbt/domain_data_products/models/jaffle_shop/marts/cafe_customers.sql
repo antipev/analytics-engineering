@@ -1,42 +1,42 @@
 {{ config(materialized='table', schema='marts') }}
 
 
-with
+WITH
 
-customers as (
+customers AS (
 
-    select * from {{ ref('stg_customers') }}
-
-),
-
-orders as (
-
-    select * from {{ ref('cafe_orders') }}
+    SELECT * FROM {{ ref('int_cafe_customers') }}
 
 ),
 
-customer_orders_summary as (
+orders AS (
 
-    select
+    SELECT * FROM {{ ref('int_cafe_orders') }}
+
+),
+
+customer_orders_summary AS (
+
+    SELECT
         orders.customer_id,
 
-        count(distinct orders.order_id) as count_lifetime_orders,
-        count(distinct orders.order_id) > 1 as is_repeat_buyer,
-        min(orders.order_date) as first_order_date,
-        max(orders.order_date) as last_order_date,
-        sum(orders.subtotal) as lifetime_spend_pretax,
-        sum(orders.tax_paid) as lifetime_tax_paid,
-        sum(orders.order_total) as lifetime_spend
+        COUNT(DISTINCT orders.order_id) AS count_lifetime_orders,
+        COUNT(DISTINCT orders.order_id) > 1 AS is_repeat_buyer,
+        MIN(orders.order_date) AS first_order_date,
+        MAX(orders.order_date) AS last_order_date,
+        SUM(orders.subtotal) AS lifetime_spend_pretax,
+        SUM(orders.tax_paid) AS lifetime_tax_paid,
+        SUM(orders.order_total) AS lifetime_spend
 
-    from orders
+    FROM orders
 
-    group by 1
+    GROUP BY 1
 
 ),
 
-joined as (
+joined AS (
 
-    select
+    SELECT
         customers.*,
 
         customer_orders_summary.count_lifetime_orders,
@@ -46,16 +46,22 @@ joined as (
         customer_orders_summary.lifetime_tax_paid,
         customer_orders_summary.lifetime_spend,
 
-        case
-            when customer_orders_summary.is_repeat_buyer then 'returning'
-            else 'new'
-        end as customer_type
+        CASE
+            WHEN customer_orders_summary.is_repeat_buyer THEN 'returning'
+            ELSE 'new'
+        END AS customer_type
 
-    from customers
+    FROM customers
 
-    left join customer_orders_summary
-        on customers.customer_id = customer_orders_summary.customer_id
+    LEFT JOIN customer_orders_summary
+        ON customers.customer_id = customer_orders_summary.customer_id
 
 )
 
-select * from joined
+SELECT
+    joined.* EXCLUDE (_key_cafe_customers),
+
+    ---------- unified star schema key (always last)
+    _key_cafe_customers
+
+FROM joined

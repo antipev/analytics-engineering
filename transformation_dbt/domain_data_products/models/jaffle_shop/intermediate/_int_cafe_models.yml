@@ -1,0 +1,174 @@
+version: 2
+
+models:
+  - name: int_cafe_customers
+    description: Thin view over `stg_cafe_customers` that adds the `_key_cafe_customers` key column. Sits upstream of `cafe_customers`, which inherits the key as its last column.
+    columns:
+      - name: _key_cafe_customers
+        description: The unified star schema key for customers (alias of `customer_id`).
+        data_tests:
+          - not_null
+          - unique
+
+  - name: int_cafe_locations
+    description: Thin view over `stg_cafe_locations` that adds the `_key_cafe_locations` key column. Sits upstream of `cafe_locations`, which inherits the key as its last column.
+    columns:
+      - name: _key_cafe_locations
+        description: The unified star schema key for locations (alias of `location_id`).
+        data_tests:
+          - not_null
+          - unique
+
+  - name: int_cafe_products
+    description: Thin view over `stg_cafe_products` that adds the `_key_cafe_products` key column. Sits upstream of `cafe_products`, which inherits the key as its last column.
+    columns:
+      - name: _key_cafe_products
+        description: The unified star schema key for products (alias of `product_id`).
+        data_tests:
+          - not_null
+          - unique
+
+  - name: int_cafe_supplies
+    description: Thin view over `stg_cafe_supplies` that adds `_key_cafe_supplies` and `_key_cafe_products`. Sits upstream of `cafe_supplies`, which inherits both keys as its last columns.
+    columns:
+      - name: _key_cafe_supplies
+        description: The unified star schema key for supplies (alias of `supply_uuid`).
+        data_tests:
+          - not_null
+          - unique
+      - name: _key_cafe_products
+        description: Foreign key to products (alias of `product_id`).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_cafe_products')
+                field: _key_cafe_products
+
+  - name: int_cafe_orders
+    description: Thin view over `stg_cafe_orders` that adds `_key_cafe_orders`, `_key_cafe_customers` and `_key_cafe_locations`. Sits upstream of `cafe_orders`, which inherits the three keys as its last columns.
+    columns:
+      - name: _key_cafe_orders
+        description: The unified star schema key for orders (alias of `order_id`).
+        data_tests:
+          - not_null
+          - unique
+      - name: _key_cafe_customers
+        description: Foreign key to customers (alias of `customer_id`).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_cafe_customers')
+                field: _key_cafe_customers
+      - name: _key_cafe_locations
+        description: Foreign key to locations (alias of `location_id`).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_cafe_locations')
+                field: _key_cafe_locations
+
+  - name: int_cafe_order_items
+    description: Thin view over `stg_cafe_order_items` that adds `_key_cafe_order_items`, `_key_cafe_orders` and `_key_cafe_products`, plus `_key_cafe_customers` and `_key_cafe_locations` joined in from `stg_cafe_orders` (one row per order). Sits upstream of `cafe_order_items`, which inherits all five keys as its last columns.
+    columns:
+      - name: _key_cafe_order_items
+        description: The unified star schema key for order items (alias of `order_item_id`).
+        data_tests:
+          - not_null
+          - unique
+      - name: _key_cafe_orders
+        description: Foreign key to orders (alias of `order_id`).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_cafe_orders')
+                field: _key_cafe_orders
+      - name: _key_cafe_products
+        description: Foreign key to products (alias of `product_id`).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('int_cafe_products')
+                field: _key_cafe_products
+      - name: _key_cafe_customers
+        description: Ancestor key to customers via `cafe_orders` (nullable on orphaned items).
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('int_cafe_customers')
+                field: _key_cafe_customers
+      - name: _key_cafe_locations
+        description: Ancestor key to locations via `cafe_orders` (nullable on orphaned items).
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('int_cafe_locations')
+                field: _key_cafe_locations
+
+  - name: int_cafe_bridge
+    description: >
+      Unified Star Schema bridge for the jaffle_shop data product. One row per
+      record per reporting table. `stage` names the table that contributed the
+      row; the row fills its own `_key_` column plus the keys of the tables it can
+      be joined to, and leaves every other key NULL. Consumers join each
+      intermediate table to the bridge on that table's `_key_` column.
+    columns:
+      - name: stage
+        description: Reporting table that contributed this row.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - cafe_customers
+                  - cafe_locations
+                  - cafe_orders
+                  - cafe_order_items
+                  - cafe_products
+                  - cafe_supplies
+      - name: _key_cafe_customers
+        description: Customer key, populated on customer, order and order-item rows.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('int_cafe_customers')
+                field: _key_cafe_customers
+      - name: _key_cafe_locations
+        description: Location key, populated on location, order and order-item rows.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('int_cafe_locations')
+                field: _key_cafe_locations
+      - name: _key_cafe_orders
+        description: Order key, populated on order and order-item rows.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('int_cafe_orders')
+                field: _key_cafe_orders
+      - name: _key_cafe_order_items
+        description: Order-item key, populated on order-item rows only.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('int_cafe_order_items')
+                field: _key_cafe_order_items
+      - name: _key_cafe_products
+        description: Product key, populated on product, order-item and supply rows.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('int_cafe_products')
+                field: _key_cafe_products
+      - name: _key_cafe_supplies
+        description: Supply key, populated on supply rows only.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('int_cafe_supplies')
+                field: _key_cafe_supplies

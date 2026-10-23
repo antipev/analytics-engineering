@@ -95,30 +95,42 @@ This map inventories the repository's tracked files and the local-only or genera
 ### Jaffle Shop staging models
 
 - **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/_sources.yml`** — Declares the `ecom` source and the six seeded raw tables used by the staging models.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_customers.sql`** — Renames raw customer columns to `customer_id` and `customer_name`.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_customers.yml`** — Documents and tests the customer staging model.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_locations.sql`** — Renames stores to locations and casts the opening timestamp to a date.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_locations.yml`** — Documents and tests the location staging model.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_order_items.sql`** — Maps raw item rows to order/item/product identifiers.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_order_items.yml`** — Documents and tests the order-item staging model.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_orders.sql`** — Renames order columns, converts cent amounts to dollars, and casts order dates.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_orders.yml`** — Documents and tests the order staging model.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_products.sql`** — Renames product fields, converts price to dollars, and derives food/drink flags.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_products.yml`** — Documents and tests the product staging model.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_supplies.sql`** — Creates a supply surrogate key and converts supply cost to dollars.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_supplies.yml`** — Documents and tests the supply staging model.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/_stg_cafe_models.yml`** — Single schema YAML for the staging layer: documents and tests all six `stg_cafe_*` models, including the `opened_at` date-truncation unit test.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_cafe_customers.sql`** — Renames raw customer columns to `customer_id` and `customer_name`.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_cafe_locations.sql`** — Renames stores to locations and casts the opening timestamp to a date.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_cafe_order_items.sql`** — Maps raw item rows to order/item/product identifiers.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_cafe_orders.sql`** — Renames order columns, converts cent amounts to dollars, and casts order dates.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_cafe_products.sql`** — Renames product fields, converts price to dollars, and derives food/drink flags.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/staging/stg_cafe_supplies.sql`** — Creates a supply surrogate key and converts supply cost to dollars.
+
+### Jaffle Shop intermediate models (Unified Star Schema keys)
+
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/intermediate/_int_cafe_models.yml`** — Single schema YAML for the intermediate layer: documents and tests the `_key_` columns of the six `int_cafe_*` views; the `int_cafe_bridge` declaration is appended in Step 3 of the USS project.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/intermediate/int_cafe_bridge.sql`** — Unified Star Schema bridge: `union all` of the six key views, one row per source record, `stage` first then the six `_key_cafe_*` columns (keys last), `CAST(NULL AS varchar)` for keys a stage cannot reach; no joins, no aggregation.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/intermediate/int_cafe_customers.sql`** — View over `stg_cafe_customers` adding `_key_cafe_customers`; `marts.cafe_customers` reads it and carries the key as its last column.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/intermediate/int_cafe_locations.sql`** — View over `stg_cafe_locations` adding `_key_cafe_locations`; `marts.cafe_locations` reads it and carries the key as its last column.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/intermediate/int_cafe_products.sql`** — View over `stg_cafe_products` adding `_key_cafe_products`; `marts.cafe_products` reads it and carries the key as its last column.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/intermediate/int_cafe_supplies.sql`** — View over `stg_cafe_supplies` adding `_key_cafe_supplies` and `_key_cafe_products`; `marts.cafe_supplies` reads it and carries both keys last.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/intermediate/int_cafe_orders.sql`** — View over `stg_cafe_orders` adding `_key_cafe_orders`, `_key_cafe_customers`, `_key_cafe_locations`; `marts.cafe_orders` reads it and carries the three keys last.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/intermediate/int_cafe_order_items.sql`** — View over `stg_cafe_order_items` adding its own key plus product and order keys, and the customer/location ancestor keys joined from `stg_cafe_orders` (one row per `order_id`); `marts.cafe_order_items` reads it and carries all five keys last.
+
+### Jaffle Shop singular tests
+
+- **`transformation_dbt/domain_data_products/tests/assert_cafe_bridge_stage_key_contract.sql`** — Fails if a bridge row fills a key its `stage` must leave NULL, or leaves empty one it must fill (the USS key matrix); reads `ref('cafe_bridge')`, so it verifies the materialized mart.
+- **`transformation_dbt/domain_data_products/tests/assert_cafe_bridge_row_counts_match_sources.sql`** — Fails if the bridge does not hold exactly one row per source record, comparing per-stage counts against the `cafe_*` marts.
 
 ### Jaffle Shop marts and seeds
 
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_customers.sql`** — Builds the customer mart with lifetime order counts, repeat-buyer flag, first/last order dates, and lifetime value.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_customers.yml`** — Documents and tests the customer mart.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_locations.sql`** — Publishes the location/store dimension as a table.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_order_items.sql`** — Joins order items to orders, products, and supplies to calculate item revenue and cost.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_order_items.yml`** — Documents and tests the order-item mart.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_orders.sql`** — Builds the order mart with item counts, subtotal, tax, total, supply cost, and customer attributes.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_orders.yml`** — Documents and tests the order mart.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_products.sql`** — Publishes the product dimension as a table.
-- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_supplies.sql`** — Publishes the supply dimension as a table.
+Every mart reads its `intermediate/int_cafe_*` counterpart and keeps the inherited `_key_cafe_*` columns as its **last** columns (a column-order convention across all three layers: business columns first, keys last).
+
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/_cafe_models.yml`** — Single schema YAML for the marts layer: documents and tests all six `cafe_*` marts, including the supply-cost and food/drink-boolean unit tests; carries a description-only block for `cafe_bridge` (its tests live on the intermediate model).
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_customers.sql`** — Builds the customer mart from `int_cafe_customers` with lifetime order counts, repeat-buyer flag, first/last order dates, and lifetime value; `_key_cafe_customers` last.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_locations.sql`** — Publishes the location/store dimension as a table, `_key_cafe_locations` last.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_order_items.sql`** — Joins order items to orders, products, and supplies to calculate item revenue and cost; the five `_key_cafe_*` columns come last.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_orders.sql`** — Builds the order mart with item counts, subtotal, tax, total, supply cost, and customer attributes; `_key_cafe_orders`, `_key_cafe_customers`, `_key_cafe_locations` last.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_products.sql`** — Publishes the product dimension as a table, `_key_cafe_products` last.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_supplies.sql`** — Publishes the supply dimension as a table, `_key_cafe_supplies` and `_key_cafe_products` last.
+- **`transformation_dbt/domain_data_products/models/jaffle_shop/marts/cafe_bridge.sql`** — Materializes the Unified Star Schema bridge in the published layer: `materialized='table'`, schema `marts`, body `SELECT * FROM {{ ref('int_cafe_bridge') }}` — a pass-through, so the definition stays single-sourced in `intermediate`.
 - **`transformation_dbt/domain_data_products/seeds/raw_customers.csv`** — Jaffle Shop customer seed, loaded as `raw.raw_customers`.
 - **`transformation_dbt/domain_data_products/seeds/raw_orders.csv`** — Jaffle Shop order seed, loaded as `raw.raw_orders`.
 - **`transformation_dbt/domain_data_products/seeds/raw_items.csv`** — Jaffle Shop order-item seed, loaded as `raw.raw_items`.
@@ -129,7 +141,7 @@ This map inventories the repository's tracked files and the local-only or genera
 ## Semantic layer (`semantic_layer/`)
 
 - **`semantic_layer/workspace/comics/`** — Credible/Publisher package for the XKCD domain: `publisher.json`, raw views, refinements, and `comics_explore`.
-- **`semantic_layer/workspace/jaffle_shop/`** — Credible/Publisher package for the Jaffle Shop domain: `publisher.json`, raw views, refinements, and `cafe_explore`.
+- **`semantic_layer/workspace/jaffle_shop/`** — Credible/Publisher package for the Jaffle Shop domain: `publisher.json`, raw views, the six `cafe_*` refinements, `2_refinements/bridge.malloy`, and the `cafe_explore` + `cafe_bridge_explore` explores. The bridge explore joins each bridge key to the mart's own id (`_Key_cafe_orders = cafe_orders.Order_id`), reading `marts` only; the keys are defined once in `intermediate/int_cafe_*` and published as the trailing `_key_cafe_*` columns of each mart, which is why every mart refinement declares `primary_key: _key_cafe_<table>`.
 - **`semantic_layer/publisher.config.json`** — Local Publisher configuration; not uploaded to Credible or copied into the deployed image.
 - **`semantic_layer/README.md`** — Package layout, connection setup, publishing rules, and the `explores` deprecation note.
 - **`.github/workflows/deploy.yaml`** — On a push to `semantic_layer/workspace/**`, bumps changed package versions, publishes them to Credible, and commits the version bump with `[skip ci]`.

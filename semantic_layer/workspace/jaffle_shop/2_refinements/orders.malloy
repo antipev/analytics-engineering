@@ -6,7 +6,7 @@ import 'order_items.malloy'
 #(doc) "One row per Jaffle Shop order with customer, location, item, and revenue context"
 source: cafe_orders is cafe_orders_raw extend {
 
-  primary_key: Order_id
+  primary_key: _key_cafe_orders
 
   rename:
     #(doc) "Unique identifier for the order"

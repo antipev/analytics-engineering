@@ -1,52 +1,52 @@
 {{ config(materialized='table', schema='marts') }}
 
 
-with
+WITH
 
-orders as (
+orders AS (
 
-    select * from {{ ref('stg_orders') }}
-
-),
-
-order_items as (
-
-    select * from {{ ref('cafe_order_items') }}
+    SELECT * FROM {{ ref('int_cafe_orders') }}
 
 ),
 
-order_items_summary as (
+order_items AS (
 
-    select
+    SELECT * FROM {{ ref('cafe_order_items') }}
+
+),
+
+order_items_summary AS (
+
+    SELECT
         order_id,
 
-        sum(supply_cost) as order_cost,
-        sum(product_price) as order_items_subtotal,
-        count(order_item_id) as count_order_items,
-        
+        SUM(supply_cost) AS order_cost,
+        SUM(product_price) AS order_items_subtotal,
+        COUNT(order_item_id) AS count_order_items,
+
         -- Try switching these from 'sum' to 'count' and then run 'dbt test'
-        sum(
-            case
-                when is_food_item then 1
-                else 0
-            end
-        ) as count_food_items,
-        sum(
-            case
-                when is_drink_item then 1
-                else 0
-            end
-        ) as count_drink_items
+        SUM(
+            CASE
+                WHEN is_food_item THEN 1
+                ELSE 0
+            END
+        ) AS count_food_items,
+        SUM(
+            CASE
+                WHEN is_drink_item THEN 1
+                ELSE 0
+            END
+        ) AS count_drink_items
 
-    from order_items
+    FROM order_items
 
-    group by 1
+    GROUP BY 1
 
 ),
 
-compute_booleans as (
+compute_booleans AS (
 
-    select
+    SELECT
         orders.*,
 
         order_items_summary.order_cost,
@@ -54,29 +54,41 @@ compute_booleans as (
         order_items_summary.count_food_items,
         order_items_summary.count_drink_items,
         order_items_summary.count_order_items,
-        order_items_summary.count_food_items > 0 as is_food_order,
-        order_items_summary.count_drink_items > 0 as is_drink_order
+        order_items_summary.count_food_items > 0 AS is_food_order,
+        order_items_summary.count_drink_items > 0 AS is_drink_order
 
-    from orders
+    FROM orders
 
-    left join
+    LEFT JOIN
         order_items_summary
-        on orders.order_id = order_items_summary.order_id
+        ON orders.order_id = order_items_summary.order_id
 
 ),
 
-customer_order_count as (
+customer_order_count AS (
 
-    select
+    SELECT
         *,
 
-        row_number() over (
-            partition by customer_id
-            order by order_date asc
-        ) as customer_order_number
+        ROW_NUMBER() OVER (
+            PARTITION BY customer_id
+            ORDER BY order_date ASC
+        ) AS customer_order_number
 
-    from compute_booleans
+    FROM compute_booleans
 
 )
 
-select * from customer_order_count
+SELECT
+    customer_order_count.* EXCLUDE (
+        _key_cafe_orders,
+        _key_cafe_customers,
+        _key_cafe_locations
+    ),
+
+    ---------- unified star schema keys (always last)
+    _key_cafe_orders,
+    _key_cafe_customers,
+    _key_cafe_locations
+
+FROM customer_order_count
