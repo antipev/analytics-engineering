@@ -17,11 +17,6 @@ source: cafe_bridge_explore is cafe_bridge extend {
   join_one: cafe_order_items on _Key_cafe_order_items = cafe_order_items._Key_cafe_order_items
   join_one: cafe_products on _Key_cafe_products = cafe_products._Key_cafe_products
   join_one: cafe_supplies on _Key_cafe_supplies = cafe_supplies._Key_cafe_supplies
-
-  dimension:
-    #(doc) "Order date; populated on order and order-item rows"
-    `Order_Date` is coalesce(cafe_orders.Order_date, cafe_order_items.Order_date)
-
-  
+ 
 
 }
