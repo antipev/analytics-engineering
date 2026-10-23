@@ -23,6 +23,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +33,18 @@ import boto3
 
 MAX_WORKERS = 8
 RESTORE_TIMEOUT_SECONDS = 180
+# R2 rate-limits by prefix and returns 429 when two instances restore the same
+# objects at once (which happens while Cloud Run retries a failing startup).
+RESTORE_ATTEMPTS = 3
+RESTORE_RETRY_DELAY_SECONDS = 5
+RETRYABLE_RESTORE_ERRORS = (
+    "429",
+    "SlowDown",
+    "ServiceUnavailable",
+    "Reduce your concurrent request rate",
+    "InternalError",
+    "RequestTimeTooSkewed",
+)
 
 # A restored file is verified with `PRAGMA quick_check` before Dagster is allowed
 # to use it. `DAGSTER_RESTORE_SELF_HEAL=0` keeps the old fail-fast behaviour.
@@ -93,6 +106,13 @@ def _delete_prefix(s3, bucket: str, key_prefix: str) -> int:
     return deleted
 
 
+def _sanitize(text: str, limit: int = 200) -> str:
+    """Collapse a SQLite verdict into one ASCII line that can be an HTTP header."""
+    single_line = " ".join(str(text).split())
+    ascii_only = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in single_line)
+    return (ascii_only[:limit] or "unknown")
+
+
 def _quarantine_and_reset(
     s3, bucket: str, base: str, key: str, path: Path, reason: str
 ) -> str:
@@ -101,6 +121,10 @@ def _quarantine_and_reset(
     The local file must go: Dagster then creates an empty database, and Litestream
     starts a new replica generation on first write. The old replica objects must go
     too, because a fresh database cannot continue an existing generation.
+
+    ``reason`` comes from ``PRAGMA quick_check`` and is multi-line, so it is
+    flattened before it is used as S3 object metadata — an HTTP header cannot
+    carry a newline, and boto3 rejects the whole request when it does.
     """
     relative = key[len(base):] if base and key.startswith(base) else key
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -109,7 +133,7 @@ def _quarantine_and_reset(
         str(path),
         bucket,
         quarantine_key,
-        ExtraArgs={"Metadata": {"quick-check": reason[:900]}},
+        ExtraArgs={"Metadata": {"quick-check": _sanitize(reason)}},
     )
     deleted = _delete_prefix(s3, bucket, f"{key}/")
     path.unlink(missing_ok=True)
@@ -138,23 +162,34 @@ def _prefix_exists(s3, bucket: str, prefix: str) -> bool:
 
 def _restore_one(litestream: str, url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    result = subprocess.run(
-        [
-            litestream,
-            "restore",
-            "-if-replica-exists",
-            "-o",
-            str(destination),
-            url,
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=RESTORE_TIMEOUT_SECONDS,
-    )
-    if result.returncode != 0:
-        detail = (result.stderr or result.stdout).strip()
-        raise RuntimeError(f"litestream restore failed for {destination}: {detail}")
+    last_detail = ""
+    for attempt in range(1, RESTORE_ATTEMPTS + 1):
+        result = subprocess.run(
+            [
+                litestream,
+                "restore",
+                "-if-replica-exists",
+                "-o",
+                str(destination),
+                url,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=RESTORE_TIMEOUT_SECONDS,
+        )
+        if result.returncode == 0:
+            return
+        last_detail = (result.stderr or result.stdout).strip()
+        retryable = any(marker in last_detail for marker in RETRYABLE_RESTORE_ERRORS)
+        if not retryable or attempt == RESTORE_ATTEMPTS:
+            break
+        _log(
+            f"restore of {destination} hit a transient R2 error "
+            f"(attempt {attempt}/{RESTORE_ATTEMPTS}); retrying in {RESTORE_RETRY_DELAY_SECONDS}s"
+        )
+        time.sleep(RESTORE_RETRY_DELAY_SECONDS)
+    raise RuntimeError(f"litestream restore failed for {destination}: {last_detail}")
 
 
 def main() -> int:
@@ -211,7 +246,7 @@ def main() -> int:
     if not self_heal:
         _log(f"{SELF_HEAL_ENV} is off; a corrupt database will fail the boot")
     failures: list[str] = []
-    quarantined: list[tuple[str, str]] = []
+    corrupt: list[tuple[str, Path, str]] = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
             executor.submit(
@@ -237,13 +272,22 @@ def main() -> int:
                 _log(f"restored {key} (quick_check ok)")
                 continue
             if not self_heal:
-                failures.append(f"{key}: corrupt ({verdict}) and {SELF_HEAL_ENV}=0")
+                failures.append(f"{key}: corrupt ({_sanitize(verdict)}) and {SELF_HEAL_ENV}=0")
                 continue
-            try:
-                _quarantine_and_reset(s3, bucket, base, key, destination, verdict)
-                quarantined.append((key, verdict))
-            except Exception as exc:  # noqa: BLE001 - keep booting, but say so
-                failures.append(f"{key}: corrupt ({verdict}) and quarantine failed: {exc}")
+            corrupt.append((key, destination, verdict))
+
+    # Quarantine only after every restore has finished. R2 rate-limits by prefix
+    # and answers 429 "reduce your concurrent request rate for the same object"
+    # when our list/delete calls race the restores still in flight.
+    quarantined: list[tuple[str, str]] = []
+    for key, destination, verdict in corrupt:
+        try:
+            _quarantine_and_reset(s3, bucket, base, key, destination, verdict)
+            quarantined.append((key, verdict))
+        except Exception as exc:  # noqa: BLE001 - keep booting, but say so
+            failures.append(
+                f"{key}: corrupt ({_sanitize(verdict)}) and quarantine failed: {_sanitize(exc)}"
+            )
 
     if quarantined:
         _log(
