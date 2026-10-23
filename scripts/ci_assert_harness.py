@@ -5,6 +5,8 @@ Nothing here touches Google Cloud. The step text is read out of the workflow YAM
 so the assertions exercised are the ones that ship, not a paraphrase of them.
 
 Usage: python scripts/ci_assert_harness.py   (exit 0 = every expected message was produced)
+
+It runs top-to-bottom on import, so execute it — do not `import` it for reuse.
 """
 import json
 import os
