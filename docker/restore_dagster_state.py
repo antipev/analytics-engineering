@@ -87,6 +87,17 @@ def _required(name: str) -> str:
     return value
 
 
+def _is_per_run_db(relative: str) -> bool:
+    """True for a per-run event-log database key (``<run_id>.db``).
+
+    Litestream's directory watcher also emits a replica whose name is the bare
+    suffix ``.db`` — the empty stem left when it treats ``history/runs`` itself as
+    a database. Restoring it writes a file literally named ``.db``, which Litestream
+    then replicates again, so the artifact survives every boot and reproduces itself.
+    """
+    return relative.endswith(".db") and relative != ".db"
+
+
 def _log(message: str) -> None:
     print(f"[restore] {message}", flush=True)
 
@@ -357,7 +368,7 @@ def main() -> int:
     runs_prefix = f"{base}history/runs/"
     for common_prefix in _list_common_prefixes(s3, bucket, runs_prefix):
         relative = common_prefix[len(runs_prefix):].strip("/")
-        if relative.endswith(".db"):
+        if _is_per_run_db(relative):
             targets[f"{runs_prefix}{relative}"] = (
                 dagster_home / "history" / "runs" / relative
             )
