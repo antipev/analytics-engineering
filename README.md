@@ -411,7 +411,7 @@ flowchart TB
 
 | Step | What the script runs | What green means |
 | --- | --- | --- |
-| 0. One-time bootstrap | `scripts/bootstrap_gcp.sh` (not run by the deploy script) | APIs enabled, `wake-shared-secret` created, runtime and Cloud Build identities granted secret access, two log-based metrics and an email alert policy exist |
+| 0. One-time bootstrap | `scripts/bootstrap_gcp.sh` (not run by the deploy script) | APIs enabled, `wake-shared-secret` created, runtime and Cloud Build identities granted secret access, two log-based metrics, an email notification channel and one alert policy per failure source exist |
 | 1. Build | `gcloud builds submit --config=cloudbuild.yaml --substitutions=_TAG=$TAG,_SERVICE=analytics-dagster .` | Docker produces a `linux/amd64` image on the `python:3.12-slim` base with nginx, supervisor and Litestream, installs the pinned `requirements.txt`, runs `dbt deps`, and generates dbt docs **at build time** — the MotherDuck token is mounted as a build secret, so it never lands in an image layer |
 | 2. Push | the `images:` block in `cloudbuild.yaml` | `gcr.io/<project>/analytics-dagster:<git-short-sha>` exists in Container Registry |
 | 3. Deploy | `gcloud run deploy analytics-dagster --image=… --allow-unauthenticated` with the scaling flags and `--set-secrets` | Cloud Run creates a new revision and routes traffic to it |
