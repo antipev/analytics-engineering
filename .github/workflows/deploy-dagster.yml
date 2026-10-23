@@ -1,0 +1,259 @@
+name: Deploy Dagster
+
+on:
+  pull_request:
+    paths:
+      - 'ingestion/orchestration_dagster/**'
+      - 'transformation_dbt/**'
+      - 'docker/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'cloudbuild.yaml'
+      - 'scripts/deploy_dagster.sh'
+      - '.github/workflows/deploy-dagster.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'ingestion/orchestration_dagster/**'
+      - 'transformation_dbt/**'
+      - 'docker/**'
+      - 'Dockerfile'
+      - 'requirements.txt'
+      - 'cloudbuild.yaml'
+      - 'scripts/deploy_dagster.sh'
+      - '.github/workflows/deploy-dagster.yml'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Deploy even while a run is live or inside the monthly window'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+# One deploy at a time, and never cancel a deploy that is already building.
+concurrency:
+  group: dagster-deploy
+  cancel-in-progress: false
+
+# Read by both jobs, so the guard and the deploy cannot disagree about the target.
+env:
+  PROJECT_ID: my-1-st-project-training
+  REGION: northamerica-northeast1
+  SERVICE: analytics-dagster
+  STALE_AFTER_SECONDS: '3600'
+
+jobs:
+  validate:
+    name: Validate definitions and dbt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install the image's dependency set
+        run: pip install -r requirements.txt
+
+      - name: Load the Dagster definitions
+        working-directory: ingestion/orchestration_dagster
+        env:
+          PYTHONPATH: src
+        run: |
+          python - <<'PY'
+          from orchestration_dagster.definitions import defs
+
+          definitions = defs()
+          counts = (len(definitions.assets), len(definitions.jobs), len(definitions.schedules))
+          print(f"assets={counts[0]} jobs={counts[1]} schedules={counts[2]}")
+          if counts != (9, 4, 1):
+              raise SystemExit(f"unexpected definition counts: {counts}")
+          PY
+
+      - name: Parse the dbt project
+        working-directory: transformation_dbt/domain_data_products
+        env:
+          DBT_TARGET: duckdb_dev
+          XKCD_DUCKDB_PATH: /tmp/ci.duckdb
+        run: |
+          dbt deps
+          dbt parse --target duckdb_dev --profiles-dir .
+
+  deploy:
+    needs: validate
+    # PRs validate only. The WIF provider accepts refs/heads/main and nothing else,
+    # so a PR job could not authenticate even if it were allowed to run.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # The commit that was checked out is the commit that gets built, so the tag
+      # is derived from HEAD — never from a timestamp or `latest`.
+      - name: Resolve the image tag
+        id: image
+        run: echo "tag=sha-$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      # 07:00 is one hour before dagster-comics-monthly (0 8 1 * *); 13:00 is one
+      # hour after dagster-comics-monthly-check (0 12 1 * *). Deploying inside that
+      # band risks the run and the check that would have reported it.
+      - name: Guard — monthly window
+        env:
+          FORCE: ${{ inputs.force || 'false' }}
+        run: |
+          if [ "$(date -u +%d)" = "01" ] && [ "$(date -u +%H)" -ge 7 ] && [ "$(date -u +%H)" -lt 13 ]; then
+            echo "01st of the month, 07:00-13:00 UTC is the monthly run window. Not deploying." >&2
+            [ "${FORCE:-false}" = "true" ] || exit 1
+            echo "::warning::force=true overrides the monthly blackout."
+          fi
+
+      # A `gcloud run deploy` replaces the container, and an interrupted run keeps a
+      # STARTED row forever. Rows older than STALE_AFTER_SECONDS are residue, not live
+      # work, so they are counted and ignored instead of blocking every future deploy.
+      - name: Guard — no live runs
+        env:
+          FORCE: ${{ inputs.force || 'false' }}
+        run: |
+          set -euo pipefail
+          SERVICE_URL=$(gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format='value(status.url)')
+
+          QUERY='{"query":"query Active { runsOrError(filter: {statuses: [QUEUED, NOT_STARTED, STARTING, STARTED, MANAGED, CANCELING]}, limit: 50) { __typename ... on Runs { count results { runId jobName status startTime } } ... on PythonError { message } } }"}'
+
+          deadline=$(( $(date -u +%s) + 1200 ))   # wait at most 20 minutes
+
+          while :; do
+            body=$(curl -sS --max-time 180 -H 'content-type: application/json' \
+              -d "$QUERY" "${SERVICE_URL}/graphql") || body=''   # network failure -> ERR below
+
+            read -r active stale < <(printf '%s' "$body" | python3 -c '
+          import json, sys, time
+          try:
+              payload = json.load(sys.stdin)
+          except Exception:
+              print("ERR 0"); sys.exit(0)     # non-JSON (proxy error page, 5xx body)
+          data = payload.get("data", {}).get("runsOrError", {})
+          if data.get("__typename") != "Runs":
+              print("ERR 0"); sys.exit(0)
+          now = time.time()
+          rows = data.get("results") or []
+          active = [r for r in rows if (now - float(r["startTime"] or now)) < float(sys.argv[1])]
+          stale = len(rows) - len(active)
+          print(len(active), stale)
+          ' "$STALE_AFTER_SECONDS")
+
+            if [ "$active" = "ERR" ]; then
+              echo "Dagster did not answer the guard query; refusing to deploy." >&2
+              exit 1
+            fi
+
+            if [ "$active" -eq 0 ]; then
+              echo "No live runs (${stale} stale STARTED rows ignored). Proceeding."
+              break
+            fi
+
+            if [ "${FORCE:-false}" = "true" ]; then
+              echo "::warning::force=true — deploying over ${active} live run(s)."
+              break
+            fi
+
+            if [ "$(date -u +%s)" -ge "$deadline" ]; then
+              echo "Still ${active} live run(s) after 20 minutes. Not deploying." >&2
+              exit 1
+            fi
+
+            echo "${active} live run(s); waiting 30 s (${stale} stale rows ignored)..."
+            sleep 30
+          done
+
+      # No flags: the script already reads TAG, builds cloudbuild.yaml, deploys with
+      # the full flag set, upserts both Scheduler jobs and polls /server_info.
+      - name: Build, deploy, upsert Scheduler, wait for readiness
+        env:
+          TAG: ${{ steps.image.outputs.tag }}
+        run: bash scripts/deploy_dagster.sh
+
+      - name: Assert the live revision is the one we built
+        env:
+          TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          set -euo pipefail
+          IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE}"
+          describe() {
+            gcloud run services describe "$SERVICE" \
+              --project="$PROJECT_ID" --region="$REGION" --format="value($1)"
+          }
+
+          LIVE_IMAGE="$(describe 'spec.template.spec.containers[0].image')"
+          REVISION="$(describe 'status.latestCreatedRevisionName')"
+          if [ "$LIVE_IMAGE" != "${IMAGE_NAME}:${TAG}" ]; then
+            echo "image mismatch: serving ${LIVE_IMAGE}, expected ${IMAGE_NAME}:${TAG}" >&2
+            exit 1
+          fi
+          echo "[assert] image matches ${TAG} (revision ${REVISION})"
+
+          # A stale control-plane response has been observed to report the previous
+          # revision as serving. Assert the traffic split instead of trusting deploy.
+          ACTIVE=""
+          for _ in $(seq 1 24); do
+            ACTIVE="$(describe 'status.traffic[0].revisionName')"
+            [ "$ACTIVE" = "$REVISION" ] && break
+            echo "[assert] waiting for ${REVISION} to receive traffic (active=${ACTIVE})"
+            sleep 5
+          done
+          if [ "$ACTIVE" != "$REVISION" ]; then
+            echo "traffic did not move to ${REVISION}" >&2
+            exit 1
+          fi
+          echo "[assert] 100% of traffic on ${REVISION}"
+
+          SERVICE_URL="$(describe 'status.url')"
+          for _ in $(seq 1 30); do
+            curl -fsS --max-time 60 "${SERVICE_URL}/server_info" >/dev/null && break
+            sleep 5
+          done
+
+          # Three tiers, three endpoints. /healthz is NOT one of them: nginx routes
+          # only /dbt-docs/, /wake and /wake/status to the wake app, so /healthz
+          # falls through to Dagster and answers 404 (measured, §1.5).
+          code() { curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$1"; }
+
+          [ "$(code "${SERVICE_URL}/server_info")" = "200" ] \
+            || { echo "Dagster webserver did not answer /server_info" >&2; exit 1; }
+          [ "$(code "${SERVICE_URL}/dbt-docs/")" = "200" ] \
+            || { echo "nginx did not serve /dbt-docs/" >&2; exit 1; }
+          # 401 without the header is the proof the wake route is wired and enforcing.
+          [ "$(code "${SERVICE_URL}/wake/status")" = "401" ] \
+            || { echo "wake API route missing or not enforcing X-Wake-Secret" >&2; exit 1; }
+          echo "[assert] /server_info 200, /dbt-docs/ 200, /wake/status 401 (route wired)"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Deploy Dagster — ${{ steps.image.outputs.tag }}"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| Commit | \`${{ github.sha }}\` |"
+            echo "| Image | \`gcr.io/$PROJECT_ID/$SERVICE:${{ steps.image.outputs.tag }}\` |"
+            echo "| Trigger | \`${{ github.event_name }}\` (force=${{ inputs.force || 'false' }}) |"
+            echo "| Result | ${{ job.status }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

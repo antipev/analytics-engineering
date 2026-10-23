@@ -33,7 +33,7 @@ fi
 IMAGE="gcr.io/${PROJECT_ID}/${SERVICE}:${TAG}"
 
 echo "[deploy] building ${IMAGE}"
-gcloud builds submit \
+gcloud builds submit --quiet \
   --project="$PROJECT_ID" \
   --config=cloudbuild.yaml \
   --ignore-file=.dockerignore \
@@ -50,7 +50,7 @@ if [[ -z "$WAKE_SECRET" ]]; then
 fi
 
 echo "[deploy] deploying Cloud Run service ${SERVICE}"
-gcloud run deploy "$SERVICE" \
+gcloud run deploy "$SERVICE" --quiet \
   --project="$PROJECT_ID" \
   --region="$REGION" \
   --image="$IMAGE" \
