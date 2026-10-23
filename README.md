@@ -86,7 +86,7 @@ flowchart TB
   subgraph OPS["Scheduling, build and operations<br/>tools and Google Cloud services that build, deploy, trigger and monitor the pipeline"]
     SCHED["Cloud Scheduler<br/>calls the wake API to start the monthly run at 08:00 UTC on the 1st"]
     CHECK["Cloud Scheduler<br/>calls the wake API to check the run result at 12:00 UTC"]
-    RELEASE["Developer terminal<br/>manual: runs scripts/deploy_dagster.sh from a local checkout"]
+    RELEASE["GitHub Actions — Deploy Dagster<br/>runs on merge to main; scripts/deploy_dagster.sh is the break-glass path"]
     BOOTSTRAP["Developer terminal<br/>one-time: runs scripts/bootstrap_gcp.sh from a local checkout"]
     BUILD["Cloud Build + Docker/BuildKit<br/>builds the linux/amd64 image from Dagster + dbt source"]
     REGISTRY["Container Registry (gcr.io)<br/>stores the tagged image"]
@@ -132,7 +132,7 @@ flowchart TB
   GH -.->|"Malloy models<br/>version-controlled (planned)"| MOLLOY
   DAG -->|"writes run state"| LS
   LS <-->|"replicates and restores"| R2_STATE
-  GH -.->|"manual clone / pull<br/>outside CI/CD"| RELEASE
+  GH -->|"merge to main<br/>deploy-dagster.yml"| RELEASE
   GH -.->|"manual clone / pull<br/>outside CI/CD"| BOOTSTRAP
   BOOTSTRAP -.->|"creates wake secret<br/>grants IAM"| SM
   RELEASE -.->|"reads wake secret"| SM
@@ -151,7 +151,7 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 
 > **Cloud Run service, not a Cloud Run Job.** The deployed compute is a request-driven Cloud Run **service** with `min-instances=0` and `max-instances=1`. Cloud Scheduler wakes it over HTTPS; it is not a batch Cloud Run Job. See [Orchestration and delivery](#orchestration-and-delivery).
 
-> **GitHub's role: source control, not Dagster CI/CD.** GitHub stores the Dagster code, dbt project, Dockerfile, release scripts, and seed CSVs. No GitHub Actions workflow builds or deploys the Dagster service, and there is no Cloud Build GitHub trigger for it. A developer clones or pulls the repository and runs `scripts/deploy_dagster.sh` manually from a local terminal; `gcloud builds submit .` uploads that working tree to Cloud Build, and the resulting image is deployed to Cloud Run. Automating this Dagster path is a roadmap item. The separate semantic-layer publish/deploy path is automated; see [`semantic_layer/README.md`](./semantic_layer/README.md).
+> **GitHub's role: source control, and the Dagster release path.** GitHub stores the Dagster code, dbt project, Dockerfile, release scripts, and seed CSVs. A merge to `main` that touches the orchestration, dbt, docker or build inputs runs `.github/workflows/deploy-dagster.yml`: `validate` loads the Dagster definitions and parses dbt, then `deploy` refuses to ship over a live run and runs `scripts/deploy_dagster.sh`, which builds with `gcloud builds submit .`, deploys the image and asserts the new revision is serving 100% of traffic. `scripts/deploy_dagster.sh` is still the whole release, so it remains the **break-glass** path when Actions is unavailable — run from a local checkout, it skips the definition check and the live-run guard. The semantic-layer publish/deploy path is automated separately; see [`semantic_layer/README.md`](./semantic_layer/README.md).
 
 > **How Secret Manager is populated.** `scripts/bootstrap_gcp.sh` is a shell script run manually once from a developer terminal — not by Docker or Cloud Build. It enables Secret Manager, creates `wake-shared-secret`, and grants the runtime and build identities access. The MotherDuck and R2 secrets must already exist; create them manually with `gcloud secrets create` or the Google Cloud console. Cloud Build then consumes `motherduck-token` at build time, while `scripts/deploy_dagster.sh` reads `wake-shared-secret` and passes runtime secret references to Cloud Run.
 
@@ -164,10 +164,10 @@ MotherDuck and Dagster are shared by both domains. Object storage and the data w
 | Functional role | Technology | Responsibility |
 | --- | --- | --- |
 | **Input sources** | XKCD JSON API (external data API); six Jaffle Shop CSV seed files | Provide the two domains' source data. |
-| **Source control** | [GitHub repository](https://github.com/antipev/analytics-engineering) | Stores Dagster code, dbt models/seeds/tests, Dockerfile, release scripts, and seed CSVs. Bootstrap and release are manual from a developer terminal; there is no GitHub Actions or Cloud Build trigger. |
+| **Source control** | [GitHub repository](https://github.com/antipev/analytics-engineering) | Stores Dagster code, dbt models/seeds/tests, Dockerfile, release scripts, and seed CSVs. A merge to `main` triggers `.github/workflows/deploy-dagster.yml`, which validates the definitions and runs the release script; bootstrap stays manual. |
 | **Scheduling** | Cloud Scheduler | Starts `POST /wake` monthly at 08:00 UTC and checks `GET /wake/status` at 12:00 UTC; retries failures. |
 | **Container image** | Dockerfile + Docker/BuildKit | Packages Dagster and dbt source, generated static dbt docs, Python 3.12, nginx, and Litestream into the `linux/amd64` image. |
-| **Build and release** | Developer terminal + Cloud Build + Container Registry + `scripts/deploy_dagster.sh` | The release script is run manually and submits the local checkout to Cloud Build, which runs the Docker build and pushes the tagged image; the script then deploys it to Cloud Run and upserts both Scheduler jobs. |
+| **Build and release** | GitHub Actions + Cloud Build + Container Registry + `scripts/deploy_dagster.sh` | The workflow runs the release script on merge; the script submits the checkout to Cloud Build, deploys the tagged image to Cloud Run, re-points both Scheduler jobs and asserts the new revision is serving 100% of traffic. The same script is the break-glass path when Actions is unavailable. |
 | **Container compute** | Cloud Run service (one container, min 0 / max 1) | Runs the packaged image: nginx, wake API, Dagster runtime, dbt runtime, static dbt docs, and Litestream; scales to zero when idle. |
 | **HTTP entry point** | nginx | Routes public traffic to the Dagster UI/GraphQL API, static dbt docs, and the wake endpoints. Cloud Run terminates TLS at the edge. |
 | **Run control** | Starlette/uvicorn wake API (internal control API) | Authenticates Scheduler, calls Dagster's GraphQL API to launch the monthly ingestion idempotently, waits for the sensor-triggered transformation, and reports status. |
@@ -314,7 +314,7 @@ Three things ship into production, at two very different levels of automation:
 | --- | --- | --- | --- |
 | **Data refresh** | Tables in MotherDuck: `staging` → `intermediate` → `marts` | `jaffle_shop_transformation_job` in Dagster (manual today), or `POST /wake` → sensor → `comics_transformation_job` for XKCD | manual — a person or Cloud Scheduler launches the Dagster job |
 | **Semantic layer release** | The `comics` and `jaffle_shop` Malloy packages on Credible, then the Malloy Publisher revision that serves them | Any `git push` to `main` that touches `semantic_layer/workspace/**` | fully automated — GitHub Actions runs every step, including the version bump |
-| **Orchestrator release** | The `analytics-dagster` Cloud Run image: Dagster, dbt, the wake API, nginx and Litestream in one container | `scripts/deploy_dagster.sh` from a local checkout | manual — one script builds, deploys and re-points both Scheduler jobs (see [How Dagster itself gets deployed](#how-dagster-itself-gets-deployed)) |
+| **Orchestrator release** | The `analytics-dagster` Cloud Run image: Dagster, dbt, the wake API, nginx and Litestream in one container | A merge to `main` that touches the orchestration, dbt, docker or build inputs | automated — GitHub Actions validates the definitions and runs `scripts/deploy_dagster.sh`, which builds, deploys and re-points both Scheduler jobs; the script is also the break-glass path (see [How Dagster itself gets deployed](#how-dagster-itself-gets-deployed)) |
 
 The semantic layer writes no data: it describes the `marts.*` tables dbt already built. So the order is **refresh the data first, release the semantics second**. A release published before a refresh still passes every gate below — it just describes yesterday's numbers.
 
@@ -363,7 +363,7 @@ The gates run shallow to deep: parse first, then build, then serve, then answer 
 | **3. Publish and compile** | `.github/workflows/publish-packages.yml` → `scripts/cred_publish.sh` | `cred publish --yes --set-latest` | every `.malloy` file parses, every `rename:` target exists on its physical table, every explore compiles, and Credible creates the version | **this is the only place Malloy is compiled in CI** — a stale column name fails here, before Publisher ever sees the code |
 | **4. Image build** | `.github/workflows/deploy-publisher.yml` | `gcloud builds submit` after `scripts/sync_semantic_layer.sh` | the Publisher image contains exactly this repo's `semantic_layer/workspace` | a package was not copied into the build context |
 | **5. Revision and traffic** | same workflow | `gcloud run deploy` + `gcloud run services update-traffic` | a new revision exists **and** 100% of traffic is on it, so the smoke test cannot pass against the previous revision | a stale control-plane response left the old revision serving |
-| **6. Smoke test** | same workflow | `curl /api/v0/status` | the service is `serving` and both `comics` and `jaffle_shop` are loaded | the container is up but a package failed to load — usually a connection or compile problem inside `workspace/` |
+| **6. Smoke test** | same workflow | `curl /api/v0/status`, parsed as JSON | the service is `serving`, both `comics` and `jaffle_shop` appear in `packages[]`, and `loadErrors` is empty | the container is up but a package failed to load — usually a connection or compile problem inside `workspace/`, or a `marts` table that no longer matches the package |
 | **7. Data check** (manual) | your terminal | `POST …/models/…/query` | the deployed explore returns the same numbers dbt produces | the package compiles but reads the wrong tables, or the data refresh never ran |
 
 Gates 1–6 are plumbing: they prove the code compiles, the image is current, and the service answers. **Only gate 7 proves the semantics** — that `cafe_bridge_explore` returns 686 orders and 7,226.67 revenue for the `cafe_orders` stage, matching `dbt build`.
@@ -382,11 +382,11 @@ That is a deliberate split: GitHub Actions owns the **semantic layer** (fast, st
 
 **Yes — Dagster runs on Cloud Run**, as one service called `analytics-dagster` in `northamerica-northeast1`, serving `https://analytics-dagster-bolcwt6srq-nn.a.run.app`. One container holds everything the pipeline needs at runtime (nginx, the wake API, Dagster with its UI and GraphQL API, the dbt runtime, the static dbt docs and Litestream).
 
-The container is built and shipped by `scripts/deploy_dagster.sh`, run by hand from a local checkout — there is no workflow for it:
+The container is built and shipped by `.github/workflows/deploy-dagster.yml` on merge to `main`, which runs `scripts/deploy_dagster.sh` after validating the definitions. The script is also the documented break-glass path: run it directly when Actions is unavailable, accepting that it skips the definition check and the live-run guard.
 
 ```mermaid
 flowchart TB
-  DEV["Developer terminal<br/>scripts/deploy_dagster.sh<br/>TAG = git rev-parse --short HEAD"]
+  DEV["Merge to main — deploy-dagster.yml<br/>or break-glass: scripts/deploy_dagster.sh<br/>TAG = git rev-parse --short HEAD"]
 
   subgraph BUILD["Cloud Build — cloudbuild.yaml (30-minute timeout)"]
     direction TB
@@ -414,7 +414,7 @@ flowchart TB
 | 0. One-time bootstrap | `scripts/bootstrap_gcp.sh` (not run by the deploy script) | APIs enabled, `wake-shared-secret` created, runtime and Cloud Build identities granted secret access, two log-based metrics, an email notification channel and one alert policy per failure source exist |
 | 1. Build | `gcloud builds submit --config=cloudbuild.yaml --substitutions=_TAG=$TAG,_SERVICE=analytics-dagster .` | Docker produces a `linux/amd64` image on the `python:3.12-slim` base with nginx, supervisor and Litestream, installs the pinned `requirements.txt`, runs `dbt deps`, and generates dbt docs **at build time** — the MotherDuck token is mounted as a build secret, so it never lands in an image layer |
 | 2. Push | the `images:` block in `cloudbuild.yaml` | `gcr.io/<project>/analytics-dagster:<git-short-sha>` exists in Container Registry |
-| 3. Deploy | `gcloud run deploy analytics-dagster --image=… --allow-unauthenticated` with the scaling flags and `--set-secrets` | Cloud Run creates a new revision and routes traffic to it |
+| 3. Deploy | `gcloud run deploy analytics-dagster --image=… --allow-unauthenticated` with the scaling flags and `--set-secrets`, then `gcloud run services update-traffic --to-latest` | Cloud Run creates a new revision; the explicit `update-traffic` clears any revision-name pin, and the script then asserts that `status.latestCreatedRevisionName` is the revision on 100% of traffic, exiting non-zero otherwise |
 | 4. Readiness | `curl -fsS $URL/server_info` retried 30 times, 5 s apart | nginx is up and proxying to Dagster's web server — if this never answers within 150 s the script **exits non-zero** |
 | 5. Docs | `curl -fsSI $URL/dbt-docs/` | the docs baked into the image are served from static files, not generated on cold start |
 | 6. Scheduler | `gcloud scheduler jobs create` or `update http`, twice | both jobs point at the current service URL and carry the current `X-Wake-Secret`, with 3 retries and 60–300 s backoff |
@@ -437,9 +437,10 @@ Every cold start replays the same boot sequence inside the container (`docker/en
 3. nginx's config is rendered from Cloud Run's `$PORT`.
 4. supervisord starts the processes in dependency order: Litestream (priority 5), `dg dev` on `127.0.0.1:3000` (10), the wake API on `127.0.0.1:3001` (15), and nginx last (20) — nginx's start script waits for `/server_info` before it accepts traffic.
 
-Two consequences worth knowing:
+Three consequences worth knowing:
 
 - **This path has no data gate.** The script proves the image is current and the service answers; it does not run a job, and it cannot tell you whether dbt still passes. That is the Dagster run itself, and today a person watches it — which is exactly how a run gets left stuck at `STARTED` (see the failure table below).
+- **A revision-name traffic pin is a trap.** `gcloud run deploy` honours an existing `--to-revisions=<name>=100` pin: it creates the revision, reports success and leaves the old revision serving (F4). The script therefore ends with an explicit `update-traffic --to-latest` and an assertion that the newest revision holds 100%, so a green run means a live deploy and the next run is never a silent no-op. A rollback drill must also finish on `--to-latest`, not on a revision name.
 - **The script is the source of truth for service config.** Any flag changed by hand in the Cloud Run console is invisible to the repository and is replaced the next time `gcloud run deploy` runs. Change `scripts/deploy_dagster.sh`, not the console.
 
 To see which image is actually live:
@@ -622,4 +623,4 @@ The full file-by-file inventory is in [REPOSITORY_MAP.md](REPOSITORY_MAP.md). It
 ## Roadmap
 
 - **AI trend-analysis agent for XKCD** — consumes the comics mart to produce trend analyses and strategic input for game development. Not implemented yet.
-- **Dagster release automation** — the Dagster image is still built and deployed manually with `scripts/deploy_dagster.sh`. Semantic-layer publish/deploy is already automated by GitHub Actions; extending that pattern to the Dagster service remains optional work.
+- **Dagster release automation** — done: a merge to `main` triggers `.github/workflows/deploy-dagster.yml` (definitions check, live-run guard, build, deploy, traffic assert). `scripts/deploy_dagster.sh` remains the break-glass path. Optional next step: a data gate that runs `dbt build` against a throwaway DuckDB before the image is built.
