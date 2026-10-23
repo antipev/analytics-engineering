@@ -7,7 +7,7 @@ Credible and the self-hosted Malloy Publisher.
 
 ```text
 semantic_layer/
-├── README.md
+├── MALLOY_SEMANTIC_LAYER.md        # this file
 ├── publisher.config.json           # local Publisher only
 └── workspace/
     ├── comics/
