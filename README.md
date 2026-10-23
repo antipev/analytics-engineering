@@ -308,12 +308,13 @@ flowchart LR
 
 ## CI/CD and deployment
 
-Two release paths ship two different things, and only one of them is automated:
+Three things ship into production, at two very different levels of automation:
 
 | Path | What ships | What starts it | Automation |
 | --- | --- | --- | --- |
 | **Data refresh** | Tables in MotherDuck: `staging` → `intermediate` → `marts` | `jaffle_shop_transformation_job` in Dagster (manual today), or `POST /wake` → sensor → `comics_transformation_job` for XKCD | manual — a person or Cloud Scheduler launches the Dagster job |
 | **Semantic layer release** | The `comics` and `jaffle_shop` Malloy packages on Credible, then the Malloy Publisher revision that serves them | Any `git push` to `main` that touches `semantic_layer/workspace/**` | fully automated — GitHub Actions runs every step, including the version bump |
+| **Orchestrator release** | The `analytics-dagster` Cloud Run image: Dagster, dbt, the wake API, nginx and Litestream in one container | `scripts/deploy_dagster.sh` from a local checkout | manual — one script builds, deploys and re-points both Scheduler jobs (see [How Dagster itself gets deployed](#how-dagster-itself-gets-deployed)) |
 
 The semantic layer writes no data: it describes the `marts.*` tables dbt already built. So the order is **refresh the data first, release the semantics second**. A release published before a refresh still passes every gate below — it just describes yesterday's numbers.
 
@@ -376,6 +377,81 @@ dbt build --select jaffle_shop    # 20 models + 72 data tests + 3 unit tests = P
 ```
 
 That is a deliberate split: GitHub Actions owns the **semantic layer** (fast, stateless, no warehouse access beyond Credible's compile), Dagster owns the **warehouse build and tests** (stateful, needs MotherDuck, writes tables).
+
+### How Dagster itself gets deployed
+
+**Yes — Dagster runs on Cloud Run**, as one service called `analytics-dagster` in `northamerica-northeast1`, serving `https://analytics-dagster-bolcwt6srq-nn.a.run.app`. One container holds everything the pipeline needs at runtime (nginx, the wake API, Dagster with its UI and GraphQL API, the dbt runtime, the static dbt docs and Litestream).
+
+The container is built and shipped by `scripts/deploy_dagster.sh`, run by hand from a local checkout — there is no workflow for it:
+
+```mermaid
+flowchart TB
+  DEV["Developer terminal<br/>scripts/deploy_dagster.sh<br/>TAG = git rev-parse --short HEAD"]
+
+  subgraph BUILD["Cloud Build — cloudbuild.yaml (30-minute timeout)"]
+    direction TB
+    B1["docker build --platform linux/amd64<br/>DOCKER_BUILDKIT=1"]
+    B2["pip install -r requirements.txt<br/>copy Dagster project + dbt project"]
+    B3["dbt deps, then dbt docs generate<br/>motherduck-token mounted as a BuildKit secret"]
+    B1 --> B2 --> B3
+  end
+
+  REG["Container Registry<br/>gcr.io/PROJECT/analytics-dagster:&lt;sha&gt;"]
+  RUN["Cloud Run — analytics-dagster<br/>new revision, 100% of traffic<br/>min 0 / max 1 instance"]
+  READY["gate 1: GET /server_info<br/>polled 30 x 5 s"]
+  DOCS["gate 2: HEAD /dbt-docs/"]
+  SCHED["gate 3: Scheduler jobs upserted<br/>08:00 UTC POST /wake<br/>12:00 UTC GET /wake/status"]
+
+  DEV -->|"gcloud builds submit"| B1
+  B3 -->|"image pushed by cloudbuild.yaml"| REG
+  REG -->|"gcloud run deploy --image ..."| RUN
+  RUN --> READY --> DOCS --> SCHED
+  SCHED -.->|"next monthly trigger"| RUN
+```
+
+| Step | What the script runs | What green means |
+| --- | --- | --- |
+| 0. One-time bootstrap | `scripts/bootstrap_gcp.sh` (not run by the deploy script) | APIs enabled, `wake-shared-secret` created, runtime and Cloud Build identities granted secret access, two log-based metrics and an email alert policy exist |
+| 1. Build | `gcloud builds submit --config=cloudbuild.yaml --substitutions=_TAG=$TAG,_SERVICE=analytics-dagster .` | Docker produces a `linux/amd64` image on the `python:3.12-slim` base with nginx, supervisor and Litestream, installs the pinned `requirements.txt`, runs `dbt deps`, and generates dbt docs **at build time** — the MotherDuck token is mounted as a build secret, so it never lands in an image layer |
+| 2. Push | the `images:` block in `cloudbuild.yaml` | `gcr.io/<project>/analytics-dagster:<git-short-sha>` exists in Container Registry |
+| 3. Deploy | `gcloud run deploy analytics-dagster --image=… --allow-unauthenticated` with the scaling flags and `--set-secrets` | Cloud Run creates a new revision and routes traffic to it |
+| 4. Readiness | `curl -fsS $URL/server_info` retried 30 times, 5 s apart | nginx is up and proxying to Dagster's web server — if this never answers within 150 s the script **exits non-zero** |
+| 5. Docs | `curl -fsSI $URL/dbt-docs/` | the docs baked into the image are served from static files, not generated on cold start |
+| 6. Scheduler | `gcloud scheduler jobs create` or `update http`, twice | both jobs point at the current service URL and carry the current `X-Wake-Secret`, with 3 retries and 60–300 s backoff |
+
+The scaling and secret configuration lives in the script, not in the console:
+
+| Setting | Value in `deploy_dagster.sh` | Why |
+| --- | --- | --- |
+| Service and region | `analytics-dagster`, `northamerica-northeast1` | one region for Run, Scheduler and the image |
+| Instances | `--min-instances=0 --max-instances=1` | scales to zero when idle; the cap is 1 because the container owns the SQLite state and two instances would mean two copies of it |
+| Resources | `--cpu=1 --memory=2Gi --concurrency=200` | dbt, Dagster, nginx and Litestream share one container; concurrency 200 absorbs the UI's parallel GraphQL and `/_next/static/*` requests |
+| CPU and timeout | `--no-cpu-throttling --cpu-boost --timeout=3600` | a dbt run must keep CPU after the HTTP response is sent, and it can outlast the 25-minute wake deadline |
+| Environment | `DAGSTER_HOME=/tmp/dagster_home`, R2 bucket and prefix, `MOTHERDUCK_DATABASE`, job names, `WAKE_TIMEOUT_SECONDS=1500` | the container is stateless apart from `/tmp`, which Litestream protects |
+| Secrets | `--set-secrets` for `MOTHERDUCK_TOKEN`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `WAKE_SHARED_SECRET` | values come from Secret Manager at runtime; nothing is baked into the image or committed |
+
+Every cold start replays the same boot sequence inside the container (`docker/entrypoint.sh` and `docker/supervisord.conf`):
+
+1. `restore_dagster_state.py` restores Dagster's SQLite databases — `runs.db`, the per-run event logs and `schedules.db` — from the R2 backup zone.
+2. `ensure_schedule_stopped.py` forces the restored monthly schedule to `STOPPED`, so a schedule left running by an older deployment cannot tick and race `/wake`.
+3. nginx's config is rendered from Cloud Run's `$PORT`.
+4. supervisord starts the processes in dependency order: Litestream (priority 5), `dg dev` on `127.0.0.1:3000` (10), the wake API on `127.0.0.1:3001` (15), and nginx last (20) — nginx's start script waits for `/server_info` before it accepts traffic.
+
+Two consequences worth knowing:
+
+- **This path has no data gate.** The script proves the image is current and the service answers; it does not run a job, and it cannot tell you whether dbt still passes. That is the Dagster run itself, and today a person watches it — which is exactly how a run gets left stuck at `STARTED` (see the failure table below).
+- **The script is the source of truth for service config.** Any flag changed by hand in the Cloud Run console is invisible to the repository and is replaced the next time `gcloud run deploy` runs. Change `scripts/deploy_dagster.sh`, not the console.
+
+To see which image is actually live:
+
+```bash
+gcloud run services describe analytics-dagster \
+  --region northamerica-northeast1 \
+  --format='value(status.latestCreatedRevisionName, spec.template.spec.containers[0].image)'
+# analytics-dagster-00014-kol   gcr.io/my-1-st-project-training/analytics-dagster:e1c5337
+```
+
+The tag after the colon is the short git SHA of the checkout that was deployed, so the image identifies its own source commit — the same property the Publisher image gets from `sha-<commit>` tags.
 
 ### What a failure looks like
 
