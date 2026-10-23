@@ -32,8 +32,7 @@ semantic_layer/
         │   ├── products.malloy
         │   └── supplies.malloy
         └── 3_explores/
-            ├── cafe_bridge_explore.malloy
-            └── cafe_explore.malloy
+            └── cafe_bridge_explore.malloy
 ```
 
 The layered layout follows the same pattern as the reference Publisher
@@ -48,7 +47,7 @@ workspace:
 > **Publisher deprecation note (2026-10-21):** Publisher logs
 > `"explores" in publisher.json is deprecated` when it loads these packages.
 > The current behavior is preserved: each package still exposes exactly one
-> source (`comics_explore` and `cafe_explore`), and both return rows through
+> source (`comics_explore` and `cafe_bridge_explore`), and both return rows through
 > Publisher and Credible. The supported replacement is an `index.malloy` file at
 > the package root, but the migration is deliberately **not** part of TASK-09 or
 > GATE-10. It changes the published package surface and must be validated in both
@@ -183,7 +182,7 @@ npx --yes @malloy-publisher/server@0.0.244 \
 ```
 
 Open `http://localhost:4000`, confirm both packages load without errors, and
-query `comics_explore`, `cafe_explore` and `cafe_bridge_explore` to verify
+query `comics_explore` and `cafe_bridge_explore` to verify
 MotherDuck connectivity. Stop the server with `Ctrl+C`.
 
 ## Credible publishing

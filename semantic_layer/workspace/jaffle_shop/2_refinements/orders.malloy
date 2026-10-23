@@ -6,7 +6,7 @@ import 'order_items.malloy'
 #(doc) "One row per Jaffle Shop order with customer, location, item, and revenue context"
 source: cafe_orders is cafe_orders_raw extend {
 
-  primary_key: _key_cafe_orders
+  primary_key: _Key_cafe_orders
 
   rename:
     #(doc) "Unique identifier for the order"
@@ -62,6 +62,15 @@ source: cafe_orders is cafe_orders_raw extend {
 
     #(doc) "Sequence number of the order within the customer's history"
     `Customer_order_number` is customer_order_number
+
+    #(doc) "Bridge join key: copy of the order primary key carried by marts.cafe_bridge"
+    `_Key_cafe_orders` is _key_cafe_orders
+
+    #(doc) "Bridge join key: copy of the customer primary key carried by marts.cafe_bridge"
+    `_Key_cafe_customers` is _key_cafe_customers
+
+    #(doc) "Bridge join key: copy of the location primary key carried by marts.cafe_bridge"
+    `_Key_cafe_locations` is _key_cafe_locations
 
   join_one: cafe_customers on Customer_id = cafe_customers.Customer_id
   join_one: cafe_locations on Location_id = cafe_locations.Location_id

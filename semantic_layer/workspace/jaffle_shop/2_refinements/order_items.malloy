@@ -4,7 +4,7 @@ import 'products.malloy'
 #(doc) "One row per order item, enriched with product attributes and supply cost"
 source: cafe_order_items is cafe_order_items_raw extend {
 
-  primary_key: _key_cafe_order_items
+  primary_key: _Key_cafe_order_items
 
   rename:
     #(doc) "Unique identifier for the order item"
@@ -33,6 +33,21 @@ source: cafe_order_items is cafe_order_items_raw extend {
 
     #(doc) "Cost of supplies required to fulfil the item"
     `Supply_cost` is supply_cost
+
+    #(doc) "Bridge join key: copy of the order-item primary key carried by marts.cafe_bridge"
+    `_Key_cafe_order_items` is _key_cafe_order_items
+
+    #(doc) "Bridge join key: copy of the parent order's order key carried by marts.cafe_bridge"
+    `_Key_cafe_orders` is _key_cafe_orders
+
+    #(doc) "Bridge join key: copy of the product primary key carried by marts.cafe_bridge"
+    `_Key_cafe_products` is _key_cafe_products
+
+    #(doc) "Bridge join key: copy of the customer primary key (via the parent order) carried by marts.cafe_bridge"
+    `_Key_cafe_customers` is _key_cafe_customers
+
+    #(doc) "Bridge join key: copy of the location primary key (via the parent order) carried by marts.cafe_bridge"
+    `_Key_cafe_locations` is _key_cafe_locations
 
   join_one: cafe_products on Product_id = cafe_products.Product_id
 

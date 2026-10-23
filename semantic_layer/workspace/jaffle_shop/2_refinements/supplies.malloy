@@ -3,7 +3,7 @@ import '../1_raw_views/config.malloy'
 #(doc) "Jaffle Shop supply catalogue with product mappings and supply costs"
 source: cafe_supplies is cafe_supplies_raw extend {
 
-  primary_key: _key_cafe_supplies
+  primary_key: _Key_cafe_supplies
 
   rename:
     #(doc) "Unique identifier for the supply record"
@@ -23,6 +23,12 @@ source: cafe_supplies is cafe_supplies_raw extend {
 
     #(doc) "Whether the supply is perishable"
     `Is_perishable_supply` is is_perishable_supply
+
+    #(doc) "Bridge join key: copy of the supply primary key carried by marts.cafe_bridge"
+    `_Key_cafe_supplies` is _key_cafe_supplies
+
+    #(doc) "Bridge join key: copy of the product primary key carried by marts.cafe_bridge"
+    `_Key_cafe_products` is _key_cafe_products
 
   measure:
     #(doc) "Total number of supply records"

@@ -7,6 +7,24 @@ source: cafe_bridge is cafe_bridge_raw extend {
     #(doc) "Reporting table that contributed this row"
     `Stage` is stage
 
+    #(doc) "Customer key: populated only on cafe_customers rows"
+    `_Key_cafe_customers` is _key_cafe_customers
+
+    #(doc) "Location key: populated only on cafe_locations rows"
+    `_Key_cafe_locations` is _key_cafe_locations
+
+    #(doc) "Order key: populated only on cafe_orders rows"
+    `_Key_cafe_orders` is _key_cafe_orders
+
+    #(doc) "Order-item key: populated only on cafe_order_items rows"
+    `_Key_cafe_order_items` is _key_cafe_order_items
+
+    #(doc) "Product key: populated only on cafe_products rows"
+    `_Key_cafe_products` is _key_cafe_products
+
+    #(doc) "Supply key: populated only on cafe_supplies rows"
+    `_Key_cafe_supplies` is _key_cafe_supplies
+
   measure:
     #(doc) "Bridge rows in the selection; one row per record per reporting table"
     `Bridge_Row_Count` is count()

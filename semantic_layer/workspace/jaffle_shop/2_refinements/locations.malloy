@@ -3,7 +3,7 @@ import '../1_raw_views/config.malloy'
 #(doc) "Jaffle Shop store locations with tax rates and opening dates"
 source: cafe_locations is cafe_locations_raw extend {
 
-  primary_key: _key_cafe_locations
+  primary_key: _Key_cafe_locations
 
   rename:
     #(doc) "Unique identifier for the store location"
@@ -17,6 +17,9 @@ source: cafe_locations is cafe_locations_raw extend {
 
     #(doc) "Date the location opened"
     `Opened_date` is opened_date
+
+    #(doc) "Bridge join key: copy of the location primary key carried by marts.cafe_bridge"
+    `_Key_cafe_locations` is _key_cafe_locations
 
   measure:
     #(doc) "Total number of store locations"

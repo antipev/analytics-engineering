@@ -11,12 +11,12 @@ import '../2_refinements/supplies.malloy'
 #(doc) "Pick one Stage per query, or filter per stage with the pick pattern, so a NULL key in one stage never removes rows from another"
 source: cafe_bridge_explore is cafe_bridge extend {
 
-  join_one: cafe_customers on _key_cafe_customers = cafe_customers._key_cafe_customers
-  join_one: cafe_locations on _key_cafe_locations = cafe_locations._key_cafe_locations
-  join_one: cafe_orders on _key_cafe_orders = cafe_orders._key_cafe_orders
-  join_one: cafe_order_items on _key_cafe_order_items = cafe_order_items._key_cafe_order_items
-  join_one: cafe_products on _key_cafe_products = cafe_products._key_cafe_products
-  join_one: cafe_supplies on _key_cafe_supplies = cafe_supplies._key_cafe_supplies
+  join_one: cafe_customers on _Key_cafe_customers = cafe_customers._Key_cafe_customers
+  join_one: cafe_locations on _Key_cafe_locations = cafe_locations._Key_cafe_locations
+  join_one: cafe_orders on _Key_cafe_orders = cafe_orders._Key_cafe_orders
+  join_one: cafe_order_items on _Key_cafe_order_items = cafe_order_items._Key_cafe_order_items
+  join_one: cafe_products on _Key_cafe_products = cafe_products._Key_cafe_products
+  join_one: cafe_supplies on _Key_cafe_supplies = cafe_supplies._Key_cafe_supplies
 
   dimension:
     #(doc) "Order date; populated on order and order-item rows"

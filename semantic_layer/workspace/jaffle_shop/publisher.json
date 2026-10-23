@@ -3,7 +3,6 @@
   "version": "0.1.5",
   "description": "Layered Jaffle Shop cafe semantic package over MotherDuck data_warehouse_demo.marts (marts only; the Unified Star Schema bridge is marts.cafe_bridge)",
   "explores": [
-    "3_explores/cafe_explore.malloy",
     "3_explores/cafe_bridge_explore.malloy"
   ]
 }
