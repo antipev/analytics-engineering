@@ -38,7 +38,7 @@ This repository applies that discipline to two independent domains on one shared
 
 Each domain owns its ingestion path, dbt models, marts, and business logic. Both pipelines and the Malloy semantic layer are implemented end to end; the AI trend-analysis agent remains a roadmap item.
 
-[Public access](#public-access) · [Architecture](#architecture) · [Semantic layer](#semantic-layer) · [Orchestration](#orchestration-and-delivery) · [Quick start](#quick-start) · [Repository map](REPOSITORY_MAP.md)
+[Public access](#public-access) · [Architecture](#architecture) · [Semantic layer](#semantic-layer) · [Orchestration](#orchestration-and-delivery) · [CI/CD](#cicd-and-deployment) · [Quick start](#quick-start) · [Repository map](REPOSITORY_MAP.md)
 
 ## Public access
 
@@ -305,6 +305,141 @@ flowchart LR
 - `/wake` is authenticated with the `X-Wake-Secret` header and can wait up to 25 minutes (1500 seconds), behind a 30-minute Scheduler and proxy deadline.
 - Litestream replicates Dagster's SQLite databases to the R2 backup zone; the entrypoint restores them before Dagster starts. Raw XKCD JSON lives in the R2 data zone.
 - The dbt assets and seed assets expose a runtime `full_refresh` option for selected rebuilds.
+
+## CI/CD and deployment
+
+Two release paths ship two different things, and only one of them is automated:
+
+| Path | What ships | What starts it | Automation |
+| --- | --- | --- | --- |
+| **Data refresh** | Tables in MotherDuck: `staging` → `intermediate` → `marts` | `jaffle_shop_transformation_job` in Dagster (manual today), or `POST /wake` → sensor → `comics_transformation_job` for XKCD | manual — a person or Cloud Scheduler launches the Dagster job |
+| **Semantic layer release** | The `comics` and `jaffle_shop` Malloy packages on Credible, then the Malloy Publisher revision that serves them | Any `git push` to `main` that touches `semantic_layer/workspace/**` | fully automated — GitHub Actions runs every step, including the version bump |
+
+The semantic layer writes no data: it describes the `marts.*` tables dbt already built. So the order is **refresh the data first, release the semantics second**. A release published before a refresh still passes every gate below — it just describes yesterday's numbers.
+
+### The release train
+
+```mermaid
+flowchart TB
+  PUSH["Developer pushes to main<br/>files under semantic_layer/workspace/**"]
+
+  subgraph GH1["GitHub Actions — Bump and Publish Packages (deploy.yaml)"]
+    direction TB
+    S1["1. Detect changed packages<br/>scripts/detect_changed_packages.py"]
+    S2["2. Bump the patch version in publisher.json<br/>bot commit: chore: auto-bump package versions [skip ci]"]
+    S3["3. cred publish --yes --set-latest<br/>scripts/cred_publish.sh (retries; tolerates an existing version)"]
+    S1 --> S2 --> S3
+  end
+
+  CRED["Credible<br/>immutable version created<br/>buildStatus READY, indexStatus indexed"]
+
+  subgraph GH2["GitHub Actions — Deploy Publisher (deploy-publisher.yml)"]
+    direction TB
+    S4["4. Cloud Build image<br/>malloy-publisher-mcp:sha-&lt;commit&gt;<br/>semantic_layer/workspace copied into the build context"]
+    S5["5. New Cloud Run revision<br/>traffic forced to 100% and asserted"]
+    S6["6. Smoke test GET /api/v0/status<br/>operationalState=serving, comics and jaffle_shop loaded"]
+    S4 --> S5 --> S6
+  end
+
+  LIVE["Live explore queries<br/>POST /api/v0/environments/workspace/packages/&lt;package&gt;/models/&lt;file&gt;/query"]
+
+  PUSH --> S1
+  S3 -->|"workflow_run: previous workflow completed successfully"| S4
+  S3 -.->|"version built and indexed"| CRED
+  S6 --> LIVE
+```
+
+Two guards keep this loop from running on itself: `deploy.yaml` skips commits authored by `credible-bot[bot]` or carrying `[skip ci]`, and `deploy-publisher.yml` only fires when the publish workflow **succeeded** (`workflow_run` with `conclusion == 'success'`), so a failed publish never replaces a working Publisher image.
+
+### What each gate actually tests
+
+The gates run shallow to deep: parse first, then build, then serve, then answer a business question.
+
+| Gate | Where it runs | Command / file | Green means | Red means |
+| --- | --- | --- | --- | --- |
+| **1. Change detection** | Actions → `deploy.yaml`, `bump` job | `scripts/detect_changed_packages.py <before> <head>` | only the packages whose files changed are rebuilt, so a `comics` edit does not republish `jaffle_shop` | a changed file has no `publisher.json` above it, or the change landed outside `semantic_layer/workspace/**` |
+| **2. Version bump** | `.github/workflows/bump-package-versions.yml` | `scripts/bump_versions.py`, then a bot commit | `publisher.json` holds a version Credible has never seen; published versions are immutable, so the bump is what makes a republish possible at all | the bot app secrets are missing, or the push raced another commit |
+| **3. Publish and compile** | `.github/workflows/publish-packages.yml` → `scripts/cred_publish.sh` | `cred publish --yes --set-latest` | every `.malloy` file parses, every `rename:` target exists on its physical table, every explore compiles, and Credible creates the version | **this is the only place Malloy is compiled in CI** — a stale column name fails here, before Publisher ever sees the code |
+| **4. Image build** | `.github/workflows/deploy-publisher.yml` | `gcloud builds submit` after `scripts/sync_semantic_layer.sh` | the Publisher image contains exactly this repo's `semantic_layer/workspace` | a package was not copied into the build context |
+| **5. Revision and traffic** | same workflow | `gcloud run deploy` + `gcloud run services update-traffic` | a new revision exists **and** 100% of traffic is on it, so the smoke test cannot pass against the previous revision | a stale control-plane response left the old revision serving |
+| **6. Smoke test** | same workflow | `curl /api/v0/status` | the service is `serving` and both `comics` and `jaffle_shop` are loaded | the container is up but a package failed to load — usually a connection or compile problem inside `workspace/` |
+| **7. Data check** (manual) | your terminal | `POST …/models/…/query` | the deployed explore returns the same numbers dbt produces | the package compiles but reads the wrong tables, or the data refresh never ran |
+
+Gates 1–6 are plumbing: they prove the code compiles, the image is current, and the service answers. **Only gate 7 proves the semantics** — that `cafe_bridge_explore` returns 686 orders and 7,226.67 revenue for the `cafe_orders` stage, matching `dbt build`.
+
+### Where the dbt tests run (they are not in CI)
+
+There is no dbt workflow. The 72 data tests and 3 unit tests run when Dagster materializes the dbt assets, and the gate for a pull request is the local build:
+
+```bash
+dbt build --select jaffle_shop    # 20 models + 72 data tests + 3 unit tests = PASS=95
+```
+
+That is a deliberate split: GitHub Actions owns the **semantic layer** (fast, stateless, no warehouse access beyond Credible's compile), Dagster owns the **warehouse build and tests** (stateful, needs MotherDuck, writes tables).
+
+### What a failure looks like
+
+Four failures I actually hit while shipping this, and what each one taught:
+
+| Symptom | Gate | Cause | Fix |
+| --- | --- | --- | --- |
+| `cred publish` fails while renaming a key: `_key_cafe_customers` "not found" on `marts.cafe_customers`, even though the column exists | 3 | Credible compiles against a **cached table description**, so a column added or renamed by the latest dbt run is invisible until the cache expires | qualify the source with the database: `motherduck.table('data_warehouse_demo.marts.cafe_customers')`. The changed table reference invalidates the description, so the compile is deterministic instead of lucky |
+| `404 {"message":"Query target is not queryable."}` from the query endpoint | 7 | either the model path is not in the revision currently serving (release still rolling), or the query uses a joined-source measure without qualifying it (`Order_Count` instead of `cafe_orders.Order_Count`) | wait for gates 5–6, then take the exact `packageName` and `path` from `GET …/packages/<pkg>/models`, and qualify joined measures |
+| Run stuck at `STARTED`, `stepsSucceeded: 0`, `stepsFailed: 1`, one step `domain_data_products` failing with `DagsterExecutionInterruptedError` | data refresh | the run was launched straight over GraphQL on the autoscaled Dagster service and the Cloud Run instance idled out mid-run, killing the dbt process before Dagster could record a terminal status | use `POST /wake` (it holds the request open for up to 1,500 s) or launch from the Dagster UI while the instance is warm, then re-run the job — a run left in this state never resolves itself |
+| `Publisher did not reach a serving state with both packages` | 6 | the image shipped without one package, or `/api/v0/status` never reached `serving` | check `sync_semantic_layer.sh` output in the build log, then the Cloud Run logs for the package load error |
+
+### Watching a release
+
+The whole chain is observable from a terminal — these are the commands behind the status line "shipped":
+
+```bash
+# 1-2. which workflow is running, and how it ended
+gh run list --limit 5
+
+# 3. the version Credible considers latest, and whether that version built
+cred get package  jaffle_shop | grep latestVersion
+cred get version  jaffle_shop 0.1.6 | grep -E 'buildStatus|indexStatus'
+
+# 4-5. which revision is actually serving
+gcloud run services describe malloy-publisher-mcp \
+  --region northamerica-northeast1 \
+  --format='value(status.traffic[0].revisionName)'
+
+# 6. the same assertion the smoke test makes
+curl -s https://malloy-publisher-mcp-bolcwt6srq-nn.a.run.app/api/v0/status \
+  | python3 -c "import sys,json;[print(p['name']) for e in json.load(sys.stdin)['environments'] for p in e['packages']]"
+
+# 7. the check that proves the semantics, not the plumbing
+curl -s -X POST \
+  'https://malloy-publisher-mcp-bolcwt6srq-nn.a.run.app/api/v0/environments/workspace/packages/jaffle_shop/models/3_explores%2Fcafe_bridge_explore.malloy/query' \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"run: cafe_bridge_explore -> { where: Stage = \"cafe_orders\"; aggregate: Bridge_Row_Count, cafe_orders.Order_Count, cafe_orders.Total_Revenue, cafe_orders.Total_Items }","compactJson":true}'
+```
+
+### Worked example — the Unified Star Schema release
+
+The chain, as it ran on 2026-10-22/23 (all values read back from GitHub, Credible, Cloud Run and MotherDuck):
+
+| Time (UTC) | Gate | Result |
+| --- | --- | --- |
+| 01:19:45 | 2 — bump | bot commit `ed7ff0d` sets `jaffle_shop` to `0.1.6` (published versions are immutable, so the previous `0.1.5` could not be overwritten) |
+| 01:20:12 | 3 — publish | Credible creates version `0.1.6`: the `_Key_*` renames and the database-qualified sources compile |
+| 01:20:19 → 01:29:06 | 4–5 — build, deploy | workflow run `39883416125` succeeds; revision `malloy-publisher-mcp-00032-kg5` takes 100% of traffic |
+| 01:29:06 | 6 — smoke | log line `Publisher is serving both semantic packages.` |
+| after | 7 — data | `Stage = 'cafe_orders'` → 686 orders, 7,226.67 revenue, 997 items; bridge total 1,892 rows, matching `marts.cafe_bridge` and the dbt aggregates |
+
+Gate 7 is the one that matters for the business question, and it is the one no workflow asserts — which is why it is written down here as a manual step rather than assumed.
+
+### Configuration the train needs
+
+| Name | Kind | Read by |
+| --- | --- | --- |
+| `CICD_BOT_APP_ID`, `CICD_BOT_APP_PRIVATE_KEY` | repository secrets | gate 2 — mint a token to push the bump commit |
+| `CRED_JWT` | repository secret | gate 3 — `cred set-access-token` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT` | repository secrets | gates 4–6 — keyless auth to Cloud Build and Cloud Run |
+| `CRED_ORG`, `CRED_ENV` (falls back to the older `CRED_PROJECT`), `SET_LATEST` | repository variables | gate 3 — target organization and environment, and whether the version becomes latest |
+
+The package-side rules that make this train safe (immutable versions, one owner per package, no cross-repository symlinks) are in [semantic_layer/README.md](semantic_layer/README.md#credible-publishing).
 
 ## Validation
 
