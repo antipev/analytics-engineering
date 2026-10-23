@@ -7,16 +7,24 @@ This script restores the top-level databases and every per-run event-log
 database in parallel before Dagster starts.
 
 If R2 is not configured, the script exits successfully and Dagster starts with
-fresh local SQLite files. Once R2 is configured, restore failures are fatal so
-Cloud Run does not silently start with empty run history.
+fresh local SQLite files. Once R2 is configured, a restore that *fails* is fatal,
+so Cloud Run does not silently start with empty run history — but a restore that
+succeeds while writing a malformed file is self-healing: `PRAGMA quick_check`
+runs on every restored database, and a corrupt one is copied to
+``<prefix>/_quarantine/<timestamp>/``, its Litestream replica is deleted, and the
+local file is dropped so Dagster starts with an empty database instead of a
+broken one. Set ``DAGSTER_RESTORE_SELF_HEAL=0`` to keep the old fail-fast
+behaviour.
 """
 
 from __future__ import annotations
 
 import os
+import sqlite3
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -24,6 +32,12 @@ import boto3
 
 MAX_WORKERS = 8
 RESTORE_TIMEOUT_SECONDS = 180
+
+# A restored file is verified with `PRAGMA quick_check` before Dagster is allowed
+# to use it. `DAGSTER_RESTORE_SELF_HEAL=0` keeps the old fail-fast behaviour.
+SELF_HEAL_ENV = "DAGSTER_RESTORE_SELF_HEAL"
+SELF_HEAL_DEFAULT = True
+QUARANTINE_PREFIX = "_quarantine"
 
 
 def _required(name: str) -> str:
@@ -35,6 +49,72 @@ def _required(name: str) -> str:
 
 def _log(message: str) -> None:
     print(f"[restore] {message}", flush=True)
+
+
+def _self_heal_enabled() -> bool:
+    """True unless the operator explicitly opts out of quarantining corrupt files."""
+    raw = os.environ.get(SELF_HEAL_ENV, "").strip().lower()
+    if not raw:
+        return SELF_HEAL_DEFAULT
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _quick_check(path: Path) -> str:
+    """Return ``ok`` when SQLite can read every page, otherwise a short reason.
+
+    `quick_check` is the cheap sibling of `integrity_check`: it reads all pages
+    but skips the index-versus-table cross-checks, which is milliseconds here.
+    A database damaged at the page level raises on this call, and a file that is
+    not a database at all raises when the header is read.
+    """
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except (sqlite3.Error, ValueError) as exc:
+        return f"cannot open: {exc}"
+    try:
+        row = conn.execute("PRAGMA quick_check").fetchone()
+    except sqlite3.Error as exc:
+        return f"{type(exc).__name__}: {exc}"
+    finally:
+        conn.close()
+    return str(row[0]) if row else "no result"
+
+
+def _delete_prefix(s3, bucket: str, key_prefix: str) -> int:
+    """Delete every object under a Litestream replica prefix; return the count."""
+    deleted = 0
+    paginator = s3.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=bucket, Prefix=key_prefix):
+        keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+        if not keys:
+            continue
+        s3.delete_objects(Bucket=bucket, Delete={"Objects": keys})
+        deleted += len(keys)
+    return deleted
+
+
+def _quarantine_and_reset(
+    s3, bucket: str, base: str, key: str, path: Path, reason: str
+) -> str:
+    """Preserve a corrupt database in R2, drop its replica, and delete the local copy.
+
+    The local file must go: Dagster then creates an empty database, and Litestream
+    starts a new replica generation on first write. The old replica objects must go
+    too, because a fresh database cannot continue an existing generation.
+    """
+    relative = key[len(base):] if base and key.startswith(base) else key
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    quarantine_key = f"{base}{QUARANTINE_PREFIX}/{stamp}/{relative}"
+    s3.upload_file(
+        str(path),
+        bucket,
+        quarantine_key,
+        ExtraArgs={"Metadata": {"quick-check": reason[:900]}},
+    )
+    deleted = _delete_prefix(s3, bucket, f"{key}/")
+    path.unlink(missing_ok=True)
+    _log(f"quarantined {key} to s3://{bucket}/{quarantine_key} and dropped {deleted} replica object(s)")
+    return quarantine_key
 
 
 def _replica_url(bucket: str, key: str, endpoint: str) -> str:
@@ -127,7 +207,11 @@ def main() -> int:
         return 0
 
     _log(f"Restoring {len(targets)} database(s) from s3://{bucket}/{base}")
+    self_heal = _self_heal_enabled()
+    if not self_heal:
+        _log(f"{SELF_HEAL_ENV} is off; a corrupt database will fail the boot")
     failures: list[str] = []
+    quarantined: list[tuple[str, str]] = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
             executor.submit(
@@ -135,16 +219,38 @@ def main() -> int:
                 litestream,
                 _replica_url(bucket, key, endpoint),
                 destination,
-            ): key
+            ): (key, destination)
             for key, destination in targets.items()
         }
         for future in as_completed(futures):
-            key = futures[future]
+            key, destination = futures[future]
             try:
                 future.result()
-                _log(f"restored {key}")
             except Exception as exc:  # noqa: BLE001 - report all failures together
                 failures.append(f"{key}: {exc}")
+                continue
+
+            # A restore that exits 0 can still write a malformed file: Litestream
+            # does not verify content. Ask SQLite before Dagster trusts it.
+            verdict = _quick_check(destination)
+            if verdict.lower() == "ok":
+                _log(f"restored {key} (quick_check ok)")
+                continue
+            if not self_heal:
+                failures.append(f"{key}: corrupt ({verdict}) and {SELF_HEAL_ENV}=0")
+                continue
+            try:
+                _quarantine_and_reset(s3, bucket, base, key, destination, verdict)
+                quarantined.append((key, verdict))
+            except Exception as exc:  # noqa: BLE001 - keep booting, but say so
+                failures.append(f"{key}: corrupt ({verdict}) and quarantine failed: {exc}")
+
+    if quarantined:
+        _log(
+            "WARNING: started with empty state for "
+            + ", ".join(key for key, _ in quarantined)
+            + " — the previous copy was corrupt and has been quarantined"
+        )
 
     if failures:
         for failure in failures:
