@@ -64,6 +64,20 @@ jobs:
       - name: Install the image's dependency set
         run: pip install -r requirements.txt
 
+      # The dbt project comes first: the dbt component loads
+      # transformation_dbt/domain_data_products/target/manifest.json at import
+      # time, so loading the definitions on a clean checkout fails until
+      # `dbt parse` has written one. Locally the file is usually already there
+      # (target/ is gitignored), which hides the dependency.
+      - name: Parse the dbt project
+        working-directory: transformation_dbt/domain_data_products
+        env:
+          DBT_TARGET: duckdb_dev
+          XKCD_DUCKDB_PATH: /tmp/ci.duckdb
+        run: |
+          dbt deps
+          dbt parse --target duckdb_dev --profiles-dir .
+
       - name: Load the Dagster definitions
         working-directory: ingestion/orchestration_dagster
         env:
@@ -78,15 +92,6 @@ jobs:
           if counts != (9, 4, 1):
               raise SystemExit(f"unexpected definition counts: {counts}")
           PY
-
-      - name: Parse the dbt project
-        working-directory: transformation_dbt/domain_data_products
-        env:
-          DBT_TARGET: duckdb_dev
-          XKCD_DUCKDB_PATH: /tmp/ci.duckdb
-        run: |
-          dbt deps
-          dbt parse --target duckdb_dev --profiles-dir .
 
   deploy:
     needs: validate
