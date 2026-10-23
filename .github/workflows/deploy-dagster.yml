@@ -69,12 +69,15 @@ jobs:
       # time, so loading the definitions on a clean checkout fails until
       # `dbt parse` has written one. Locally the file is usually already there
       # (target/ is gitignored), which hides the dependency.
+      # profiles.yml is gitignored, so a clean checkout has none. The example is
+      # the same file with placeholder defaults and env-driven outputs.
       - name: Parse the dbt project
         working-directory: transformation_dbt/domain_data_products
         env:
           DBT_TARGET: duckdb_dev
           XKCD_DUCKDB_PATH: /tmp/ci.duckdb
         run: |
+          [ -f profiles.yml ] || cp profiles.example.yml profiles.yml
           dbt deps
           dbt parse --target duckdb_dev --profiles-dir .
 

@@ -41,6 +41,13 @@ RUN pip install -r /app/requirements.txt
 COPY ingestion/orchestration_dagster /app/ingestion/orchestration_dagster
 COPY transformation_dbt /app/transformation_dbt
 
+# profiles.yml is gitignored (it can carry credentials), so a clean checkout has
+# none — and a laptop build silently bakes in the local one. Fall back to the
+# tracked example, whose outputs are all env-driven; without this, `dbt docs
+# generate` below fails on any build that did not start from a warm worktree.
+RUN cd /app/transformation_dbt/domain_data_products \
+    && { [ -f profiles.yml ] || cp profiles.example.yml profiles.yml; }
+
 # dbt packages and docs are generated at image-build time. The MotherDuck token
 # is mounted as a BuildKit secret and is never stored in an image layer. When no
 # token is supplied, build an empty-catalog docs site from a temporary DuckDB
