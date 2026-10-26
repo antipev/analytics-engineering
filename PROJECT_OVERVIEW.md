@@ -68,86 +68,13 @@ Each domain owns its ingestion path, dbt models, marts, and business logic. Both
 
 **API** means **application programming interface**: a defined way for one system to call another to exchange data or trigger an action. Three APIs are central to the architecture: the **XKCD JSON API** (external data API for comic retrieval), the **wake API** (internal control API inside the Cloud Run service, called by Cloud Scheduler), and the **Dagster GraphQL API** (internal orchestration API used by the Dagster UI and the wake API to launch and monitor runs).
 
-```mermaid
-%%{init: {"flowchart": {"subGraphTitleMargin": {"top": 0, "bottom": 20}, "nodeSpacing": 20, "rankSpacing": 24}}}%%
-flowchart TB
-  subgraph CONSUMERS["Data consumers<br/>people and agents that use the pipeline"]
-    USER_DAG["Analyst / reviewer<br/>opens the Dagster UI and dbt docs"]
-    USER_SQL["Analyst / reviewer<br/>queries MotherDuck directly with SQL"]
-    USER_SEM["Analyst / reviewer<br/>queries metrics and dimensions in Malloy Publisher"]
-    AGENT["AI agent<br/>queries the semantic layer over MCP"]
-  end
+### Architecture diagram
 
-  subgraph SOURCES["Input data sources<br/>where the pipeline gets its data"]
-    XKCD["XKCD JSON API<br/>external data API for comic retrieval"]
-    SEEDS["Jaffle Shop seed files<br/>six CSV files committed to GitHub"]
-  end
+*Figure 1 — Analytics engineering architecture, version 5. Seven stages: sources → ingest → land → transform → isolate domains → define semantics → explore. Gold numbered markers (1–5) follow the monthly control path from Cloud Scheduler through nginx and the wake API into Dagster, dbt, and MotherDuck; the teal paths are the low-idle-cost runtime; the dashed gold paths are planned alternatives, not deployed connections.*
 
-  GH["GitHub repository<br/>source control only; Dagster, dbt, Malloy, Dockerfile, scripts"]
+[![Analytics engineering architecture: XKCD and Jaffle Shop from sources through MotherDuck to Malloy, Credible and Publisher, with the scale-to-zero Cloud Run Dagster service and the monthly control path](PICTURES/analytics-architecture-v5.svg)](PICTURES/analytics-architecture-v5.svg)
 
-  subgraph OPS["Scheduling, build and operations<br/>tools and Google Cloud services that build, deploy, trigger and monitor the pipeline"]
-    SCHED["Cloud Scheduler<br/>calls the wake API to start the monthly run at 08:00 UTC on the 1st"]
-    CHECK["Cloud Scheduler<br/>calls the wake API to check the run result at 12:00 UTC"]
-    RELEASE["GitHub Actions — Deploy Dagster<br/>runs on merge to main; scripts/deploy_dagster.sh is the break-glass path"]
-    BOOTSTRAP["Developer terminal<br/>one-time: runs scripts/bootstrap_gcp.sh from a local checkout"]
-    BUILD["Cloud Build + Docker/BuildKit<br/>builds the linux/amd64 image from Dagster + dbt source"]
-    REGISTRY["Container Registry (gcr.io)<br/>stores the tagged image"]
-    SM["Secret Manager<br/>stores MotherDuck, R2 and wake credentials"]
-    OBS["Cloud Logging + Monitoring<br/>collects logs and metrics and sends email alerts"]
-  end
-
-  subgraph COMPUTE["Runtime - Cloud Run service<br/>runs the container image and scales to zero when idle"]
-    NGINX["nginx<br/>routes public traffic to the UI, docs and wake API"]
-    WAKE["wake API<br/>internal control API that starts the run and reports status"]
-    DAG["Dagster runtime<br/>UI + GraphQL API<br/>assets, jobs, sensors and run state"]
-    DBT["dbt runtime<br/>builds and tests staging, intermediate and mart models"]
-    DOC["dbt docs<br/>static files generated during image build"]
-    LS["Litestream<br/>protects run state by backing up SQLite"]
-  end
-
-  subgraph STORAGE["Object storage - two logical zones in one R2 bucket<br/>Cloudflare R2, free tier up to 10 GB"]
-    R2_DATA[("R2 data zone<br/>raw_comics/{num}.json")]
-    R2_STATE[("R2 backup zone<br/>Dagster SQLite replicas")]
-  end
-
-  MD[("MotherDuck data warehouse (DWH)<br/>raw, staging and mart tables")]
-
-  MOLLOY["Semantic Layer<br/>Malloy Publisher over MotherDuck mart tables<br/>reusable metrics and dimensions from version-controlled Malloy models"]
-
-  USER_DAG -->|"opens UI / docs"| NGINX
-  USER_SQL -->|"SQL queries"| MD
-  USER_SEM -->|"queries mart metrics"| MOLLOY
-  AGENT -->|"MCP tool calls"| MOLLOY
-  SCHED -->|"POST /wake"| NGINX
-  CHECK -->|"GET /wake/status"| NGINX
-  NGINX -->|"wake routes"| WAKE
-  NGINX -->|"Dagster UI + GraphQL API"| DAG
-  NGINX -->|"dbt docs"| DOC
-  WAKE -->|"launches and monitors runs via GraphQL"| DAG
-  XKCD -->|"comic JSON<br/>Dagster fetches and writes"| R2_DATA
-  R2_DATA -->|"raw JSON files<br/>Dagster loads"| MD
-  GH -.->|"six versioned CSV seed files"| SEEDS
-  SEEDS -->|"dbt seed<br/>creates raw_* tables"| MD
-  DAG -->|"runs dbt seed and model assets"| DBT
-  DBT <-->|"builds and tests models"| MD
-  MD -->|"mart tables"| MOLLOY
-  GH -.->|"Malloy models<br/>version-controlled (planned)"| MOLLOY
-  DAG -->|"writes run state"| LS
-  LS <-->|"replicates and restores"| R2_STATE
-  GH -->|"merge to main<br/>deploy-dagster.yml"| RELEASE
-  GH -.->|"manual clone / pull<br/>outside CI/CD"| BOOTSTRAP
-  BOOTSTRAP -.->|"creates wake secret<br/>grants IAM"| SM
-  RELEASE -.->|"reads wake secret"| SM
-  RELEASE -.->|"gcloud builds submit ."| BUILD
-  BUILD -->|"pushes tagged image"| REGISTRY
-  REGISTRY -.->|"Cloud Run pulls image"| COMPUTE
-  RELEASE -.->|"gcloud run deploy"| COMPUTE
-  RELEASE -.->|"upserts jobs"| SCHED
-  RELEASE -.->|"upserts job"| CHECK
-  SM -.->|"build secret"| BUILD
-  SM -.->|"runtime credentials"| COMPUTE
-  COMPUTE -->|"logs and metrics"| OBS
-```
+Click the figure to open it at full size. The tracked file is a copy of `DOCUMENTATION/analytics-architecture-v5/analytics-architecture-v5.svg` (version 5, pinned to `2a70b72`); re-copy it from that folder when the diagram changes rather than editing it here.
 
 MotherDuck and Dagster are shared by both domains. Object storage and the data warehouse are shown separately: the **R2** box keeps files and backups, while **MotherDuck** keeps queryable tables and runs SQL. R2 is split into two logical zones within the same bucket: the `raw_comics/` prefix is XKCD's JSON landing zone, while the `dagster_home/` prefix holds Litestream replicas of Dagster's SQLite state. The solid arrows show data lineage; Dagster executes the XKCD fetch, R2 write/read, and MotherDuck load. Jaffle Shop's raw layer is loaded into MotherDuck by `dbt seed` from the six CSV files committed to GitHub.
 
@@ -616,7 +543,7 @@ Two notes:
   `cafe_*` marts (intermediate + marts), and the unit tests are reachable from the
   layer that owns the tested model. The domain total is the authoritative number.
 
-Layer and model naming follow one rule per folder — `staging/stg_cafe_*`, `intermediate/int_cafe_*`, `marts/cafe_*`, each with a single schema YAML (`_stg_cafe_models.yml`, `_int_cafe_models.yml`, `_cafe_models.yml`). The key contract these intermediate tests enforce is documented in [8_PROJECT_1_USS_Implementation.md](DOCUMENTATION/2_Plan_and_Implementation/8_PROJECT_1_USS_Implementation.md).
+Layer and model naming follow one rule per folder — `staging/stg_cafe_*`, `intermediate/int_cafe_*`, `marts/cafe_*`, each with a single schema YAML (`_stg_cafe_models.yml`, `_int_cafe_models.yml`, `_cafe_models.yml`). The key contract these intermediate tests enforce is documented in the USS implementation plan (section 12 of the local documentation set, which is not versioned in GitHub).
 
 ## Repository map
 
