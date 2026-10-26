@@ -4,7 +4,8 @@ This map inventories the repository's tracked files and the local-only or genera
 
 ## Root, build, and deployment
 
-- **`PROJECT_OVERVIEW.md`** — Project overview, component diagram, architecture, run instructions, and validation evidence.
+- **`README.md`** — Landing page: one-paragraph summary, the version 5 architecture diagram, and links to the overview and the repository map.
+- **`PROJECT_OVERVIEW.md`** — Project overview, the version 5 architecture diagram (Figure 1), component responsibilities, run instructions, and validation evidence.
 - **`REPOSITORY_MAP.md`** — File-by-file inventory of the repository, split out of `PROJECT_OVERVIEW.md`.
 - **`Dockerfile`** — Builds the Python 3.12 runtime image: installs nginx, supervisor, Litestream, and pinned Python dependencies; copies code; runs `dbt deps`; generates dbt docs at build time with an optional BuildKit secret.
 - **`.dockerignore`** — Keeps secrets, virtualenvs, generated dbt/Dagster state, notebooks, and `DOCUMENTATION/` out of the image build context.
@@ -14,6 +15,7 @@ This map inventories the repository's tracked files and the local-only or genera
 - **`.gitignore`** — Excludes local secrets, virtualenvs, databases, logs, and generated artifacts from version control.
 - **`scripts/bootstrap_gcp.sh`** — One-time GCP bootstrap: enables APIs, grants secret access to runtime/build service accounts, creates `wake-shared-secret`, upserts two log-based metrics, an email notification channel, and two alert policies.
 - **`scripts/deploy_dagster.sh`** — Release command: builds with `cloudbuild.yaml`, deploys the Cloud Run service with scale-to-zero settings and secrets, waits for readiness, verifies dbt docs, and creates or updates both Cloud Scheduler jobs.
+- **`PICTURES/analytics-architecture-v5.svg`** — The version 5 architecture diagram (Figure 1 in `PROJECT_OVERVIEW.md` and the image in `README.md`). It is a **derived copy**: the editable source is `DOCUMENTATION/analytics-architecture-v5/`, so re-copy the export when the diagram changes instead of editing this file.
 - **`PICTURES/Analytic Module Deployment Benefits.png`** — Illustration of the business value of analytic module deployment.
 - **`PICTURES/Digital Transformation.png`** — Illustration of digital transformation versus digitalization.
 - **`PICTURES/Dagster Lineage.png`** — Screenshot evidence of global Dagster asset lineage across both domains.
@@ -160,6 +162,7 @@ Every mart reads its `intermediate/int_cafe_*` counterpart and keeps the inherit
 - **`DOCUMENTATION/2_Plan_and_Implementation/2_PROJECT_1_PLAN.md`** — End-to-end build and operations plan, including the monthly scale-to-zero implementation, file inventory, economics, and live deployment evidence.
 - **`DOCUMENTATION/2_Plan_and_Implementation/3_PROJECT_1_Docker.md`** — Container and Cloud Run implementation notes, revision details, and deployment checks.
 - **`DOCUMENTATION/2_Plan_and_Implementation/4_PROJECT_1_Schedule.md`** — Authoritative design for scheduling, Litestream, the wake endpoint, dbt docs delivery, and alerting.
+- **`DOCUMENTATION/analytics-architecture-v5/`** — Source of the version 5 architecture diagram: the React component tree, the `analytics-architecture-v5.svg`/`.png` exports, `isolated-domains-v5.png`, `ICONS.md`, `design.md`, and `README.md` notes on the export and the hosted app. Only the SVG copy in `PICTURES/` is versioned.
 
 ## Generated and local-only files
 
