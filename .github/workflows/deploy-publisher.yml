@@ -167,3 +167,29 @@ jobs:
 
           echo "Publisher did not reach a serving state with both packages loaded." >&2
           exit 1
+
+      - name: Verify RAG context coverage for every served package
+        working-directory: publisher
+        env:
+          # The Node Publisher can serve a package while the RAG index holds no
+          # graph for it; malloy_getContext then silently relays the call to the
+          # raw source stub (fields only, no money measures, no 3-section context).
+          # Warn-only until the semantic-layer build indexes every package: set the
+          # repository variable ENFORCE_CONTEXT_COVERAGE=true to make it fatal.
+          ENFORCE_CONTEXT_COVERAGE: ${{ vars.ENFORCE_CONTEXT_COVERAGE || 'false' }}
+        run: |
+          set -Eeuo pipefail
+          SERVICE_URL=$(gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$REGION" \
+            --format='value(status.url)')
+
+          ARGS=(--base-url "$SERVICE_URL"
+                --config workspace/publisher.config.json
+                --require jaffle_shop:Revenue
+                --require thelook_ecommerce:Total_Gross_Margin)
+          if [ "${ENFORCE_CONTEXT_COVERAGE}" != "true" ]; then
+            ARGS+=(--soft)
+          fi
+
+          python3 scripts/verify_context_coverage.py "${ARGS[@]}"
