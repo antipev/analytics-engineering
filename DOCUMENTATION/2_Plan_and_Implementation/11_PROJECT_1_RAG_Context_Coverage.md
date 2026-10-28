@@ -1,7 +1,7 @@
 # Project 1 — RAG context coverage for every served Publisher package
 
 > **Date:** 2026-10-28
-> **Status:** Phase 0 **applied and validated** (4 files + 1 workflow step, all local/uncommitted); **Phase 1 complete** — `TASK-01`/`TASK-02`/`TASK-03` applied, `GATE-01` **PASS** (repo truth `3/3`; local `malloy_getContext` returns 3 Section-Summary with `Total_Revenue` for all three packages). **Phase 2 complete** — `TASK-04` (idempotent build, verified in 5 build-context shapes) and `TASK-05` (`/context/healthz`) done; `GATE-02` is PASS at command level and **blocked on a Docker daemon** for the container half. Remaining: Phase 3-4 — `TASK-06` … `TASK-13` below are the execution split.
+> **Status:** Phase 0 **applied and validated** (4 files + 1 workflow step); **Phase 1 complete** — `TASK-01`/`TASK-02`/`TASK-03` applied, `GATE-01` **PASS** (repo truth `3/3`; local `malloy_getContext` returns 3 Section-Summary with `Total_Revenue` for all three packages). **Phase 2 complete** — `TASK-04` (idempotent build, verified in 5 build-context shapes) and `TASK-05` (`/context/healthz`) done; `GATE-02` is PASS at command level and **blocked on a Docker daemon** for the container half. **Phase 3 written** — `TASK-06` (IAM binding applied), `TASK-07` (`build_context_index.sh` green: 163 s, 3/3, 420 chunks) and `TASK-08` (token + index steps, `cloudbuild.yaml`) are done; `GATE-03` needs one real deploy run from `main`. Remaining: Phase 4 — `TASK-09` … `TASK-13`.
 > **Related:** [`6_PROJECT_1_Malloy_Semantic_Layer.md`](./6_PROJECT_1_Malloy_Semantic_Layer.md) — the semantic layer this context is built from. [`7_PROJECT_1_Credible_GitHub_Implementation.md`](./7_PROJECT_1_Credible_GitHub_Implementation.md) §9A — the Publisher publish automation. [`10_PROJECT_1_Dagster_CI_Deployment.md`](./10_PROJECT_1_Dagster_CI_Deployment.md) — the deployment pattern and task-tracking style reused here.
 > **Goal:** `malloy_getContext` returns a real 3-section RAG context, with the money measures, for **all three** served packages (`thelook_ecommerce`, `jaffle_shop`, `comics`) — and the deploy fails loudly if that ever regresses.
 > **Change budget:** one connection block in one JS file, one Dockerfile `RUN` line, one renamed route, one CI build step, one IAM binding, one repository variable. **No new services, no new repositories, no copies of the semantic layer.**
@@ -562,11 +562,105 @@ Measured against a locally served instance (`PORT=8099`, `UPSTREAM_MCP` pointing
 
 | ID | Task | Files | Acceptance | Effort | Status |
 |---|---|---|---|---|---|
-| `TASK-06` | Grant the deploy identity `secretAccessor` on `motherduck-token` (§5.2) | — (one `gcloud` command) | `gcloud secrets versions access` succeeds **as the CI identity** | 5 m | `TODO` |
-| `TASK-07` | Add `scripts/build_context_index.sh` with the secret preflight, npm ci, non-`--fresh` pipeline, verify | `scripts/build_context_index.sh` (new) | Runs green locally; with the token deliberately unset it fails in < 5 s with an actionable message | 30 m | `TODO` |
-| `TASK-08` | Wire the index build into the deploy workflow, before `gcloud builds submit`, with `MOTHERDUCK_TOKEN` from Secret Manager (`::add-mask::`); **also supply the token to the image build itself** (`cloudbuild.yaml` with `buildArgs` + `availableSecrets`, replacing `--tag`, because a cloudbuild `--tag` run cannot carry build args — see `TASK-04` record) | `.github/workflows/deploy-publisher.yml`, `cloudbuild.yaml` (new) | A workflow run logs "index coverage 3/3" before the image step, and the image step succeeds with the token passed as a build arg | 35 m | `TODO` |
+| `TASK-06` | Grant the deploy identity `secretAccessor` on `motherduck-token` (§5.2) | — (one `gcloud` command) | `gcloud secrets versions access` succeeds **as the CI identity** | 5 m | **`DONE`** — binding applied (3 principals, baseline captured); behavioural proof lands with `GATE-03` |
+| `TASK-07` | Add `scripts/build_context_index.sh` with the secret preflight, npm ci, non-`--fresh` pipeline, verify | `scripts/build_context_index.sh` (new) | Runs green locally; with the token deliberately unset it fails in < 5 s with an actionable message | 30 m | **`DONE`** — 163 s green (3/3, 420 chunks); 2 s on an unreadable secret |
+| `TASK-08` | Wire the index build into the deploy workflow, before `gcloud builds submit`, with `MOTHERDUCK_TOKEN` from Secret Manager (`::add-mask::`); **also supply the token to the image build itself** (`cloudbuild.yaml` with `buildArgs` + `availableSecrets`, replacing `--tag`, because a cloudbuild `--tag` run cannot carry build args — see `TASK-04` record) | `.github/workflows/deploy-publisher.yml`, `cloudbuild.yaml` (new) | A workflow run logs "index coverage 3/3" before the image step, and the image step succeeds with the token passed as a build arg | 35 m | **`DONE`** — 2 steps added + `cloudbuild.yaml` via `secretEnv`; the run itself is `GATE-03` |
 
 **`GATE-03` — CI owns the index:** one real deploy run from `main` produces a revision whose `verify_context_coverage.py` result is `3/3` **without** any local step.
+
+#### `TASK-06` record (2026-10-28) — **DONE** (binding applied; proof of use deferred to `GATE-03`)
+
+Applied exactly the §5.2 command, after capturing the baseline policy so the change is reversible and provable:
+
+```
+$ gcloud secrets get-iam-policy motherduck-token --project my-1-st-project-training   # before
+roles/secretmanager.secretAccessor →
+    669258319971-compute@developer.gserviceaccount.com     (Cloud Run runtime)
+    669258319971@cloudbuild.gserviceaccount.com            (Cloud Build)
+
+$ gcloud secrets add-iam-policy-binding motherduck-token \
+    --project my-1-st-project-training \
+    --member serviceAccount:malloy-analytics-user@my-1-st-project-training.iam.gserviceaccount.com \
+    --role roles/secretmanager.secretAccessor
+Updated IAM policy for secret [motherduck-token].
+```
+
+The policy now holds three principals: the two above **plus** the deploy identity — nothing was removed, and `remove-iam-policy-binding` with the same four arguments reinstates today's state exactly. The IAM condition on `malloy-analytics-user@` is untouched, so the grant is still reachable only from `attribute.repository/antipev/analytics-engineering`.
+
+**What is *not* proven, and why that is acceptable here:** the acceptance in §5.4 says "as the CI identity". Impersonating `malloy-analytics-user@` from this machine needs `roles/iam.serviceAccountTokenCreator`, which this user does not hold, and `gcloud policy-troubleshoot iam` would enable an API it does not currently use. Both were declined rather than papered over: the evidence is the policy document (which is what `secretAccessor` *means*), and the behavioural proof is `GATE-03` — the first real workflow run resolves the token with this identity or fails in the new preflight. A policy grant with no consumer yet cannot be proven any other way without borrowing credentials.
+
+#### `TASK-07` record (2026-10-28) — **DONE**
+
+`scripts/build_context_index.sh` (new, 193 lines) — five numbered sections matching the header comment: token preflight, `npm ci --omit=dev`, interpreter resolution, the pipeline, the coverage assertion.
+
+Three things it does that the plan text did not spell out, each forced by a measurement:
+
+1. **Environment first, Secret Manager second** (`resolve_token`). If `MOTHERDUCK_TOKEN` is already exported it is used as-is, so a developer never needs `gcloud`; otherwise the secret is read with the *caller's* identity, which is what makes the CI path the same code as the local path. On failure it prints the `gcloud secrets add-iam-policy-binding` line with the actual caller address filled in — `tail -1` of the gcloud error is included so a typo'd secret name is not reported as a permissions problem.
+2. **The pipeline imports Stage 3 unconditionally** (`run_context_pipeline.py:68`), so `chromadb, fastapi, uvicorn, httpx` must be importable even when only Stages 1-2 will run. Rather than assume the caller's interpreter has them, the script creates `context/.venv-index` and installs `context/orchestration/requirements.txt` into it. `.gitignore` gained `.venv-index/` in the same commit, and `.dockerignore` already covers `context/.venv*`, so the venv cannot leak into the image.
+3. **`--require jaffle_shop:Total_Revenue --require jaffle_shop:Gross_Margin` by default.** Coverage alone ("3/3 contexts") would still be satisfiable by three field-only contexts; the two measures are the thing the original bug destroyed, so they are asserted by name and the flags are overridable.
+
+Verification, in the order it was run:
+
+| Step | Command | Result |
+|---|---|---|
+| syntax | `bash -n scripts/build_context_index.sh` | clean (`shellcheck` not installed here) |
+| usage | `./scripts/build_context_index.sh --help` | prints the header block, exit 0 |
+| fast fail | `env -u MOTHERDUCK_TOKEN SECRET_NAME=no-such-secret-xyz ./scripts/build_context_index.sh` | **exit 1 in 2 s** — `NOT_FOUND` line + the binding command, no pipeline started |
+| full run | `./scripts/build_context_index.sh` | **exit 0 in 163 s** |
+| coverage | last lines of that run | `✅ thelook 205/185 · comics 112/108 · jaffle_shop 103/95`, `3/3 served package(s) have a RAG context`, `[index] index coverage 3/3` |
+| chunks | `Total chunks indexed in ChromaDB 'malloy_subgraphs': 420` | same 420 as `TASK-03` — the non-`--fresh` path re-indexes in place, it does not duplicate |
+
+Two operational notes from that run: `npm ci` prints ~15 `EBADENGINE` warnings when the ambient `node` is old (`/usr/bin/node` is v12 here) — the compile itself resolved `nvm` v24 and succeeded, so the warnings are noise, but **Node ≥ 20 is a prerequisite** of Stage 1 either way. And the run rewrote the five tracked `chroma_db` binaries with identical logical content (420 chunks, same 205/112/103 split, verified by reading the collection back); those binary diffs were reverted rather than committed, which is `TASK-12`'s argument in miniature.
+
+A second run (`--skip-npm`, token already in the environment — the other branch of the preflight) reproduced the same index: `[OK]` for all three, `205/112/103`, `Total chunks … 420`, `3/3`. So the script is idempotent across both token sources, and the only thing a rebuild changes is the Chroma binary layout.
+
+#### `TASK-08` record (2026-10-28) — **written and parsed; `GATE-03` needs a real run from `main`**
+
+Three files, two in the engineering repo and one in the RAG repo.
+
+**`deploy-publisher.yml` — two new steps ahead of the image step.**
+
+```yaml
+- name: Resolve the MotherDuck token
+  env: { SECRET_NAME: motherduck-token }
+  run: |
+    TOKEN=$(gcloud secrets versions access latest --secret="$SECRET_NAME" --project "$PROJECT_ID")
+    echo "::add-mask::${TOKEN}"
+    echo "MOTHERDUCK_TOKEN=${TOKEN}" >> "$GITHUB_ENV"
+- name: Build the RAG context index
+  working-directory: publisher
+  run: ./scripts/build_context_index.sh --config workspace/publisher.config.json
+```
+
+The masking step is a step of its own, not an `env:` block, because `::add-mask::` has to run *before* any line can echo the value; `$GITHUB_ENV` then carries it to the next step without it ever entering `argv` in the clear. Its failure branch repeats the `add-iam-policy-binding` command using `$GCP_SERVICE_ACCOUNT`, so a lost binding reads as an IAM problem in the step summary rather than as a Malloy error later. The image step became `gcloud builds submit --config cloudbuild.yaml --substitutions=_IMAGE="$IMAGE" --quiet .`.
+
+**`cloudbuild.yaml` (new, RAG repo) — the only way to pass a build arg.**
+
+```yaml
+- name: 'gcr.io/cloud-builders/docker'
+  entrypoint: 'bash'
+  args: ['-c', 'docker build --build-arg MOTHERDUCK_TOKEN="$$MOTHERDUCK_TOKEN" -t "${_IMAGE}" .']
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/motherduck-token/versions/latest
+      env: MOTHERDUCK_TOKEN
+options: { machineType: 'E2_HIGHCPU_8', logging: CLOUD_LOGGING_ONLY }
+```
+
+`$` vs `$$` is the subtle part: Cloud Build substitutes `${_IMAGE}` into the step before the shell sees it, so `$$MOTHERDUCK_TOKEN` is *shell* expansion of the `secretEnv` variable and the token appears in no substitution, no log line and no layer. `E2_HIGHCPU_8` because the in-image index build compiles 12 files at ~3.1 s each; `CLOUD_LOGGING_ONLY` so the build needs no GCS log bucket. The config is read from the uploaded source directory, which is `publisher/`, hence `working-directory: publisher` on the step.
+
+**Deliberate duplication, recorded so nobody "optimises" it away.** The workflow index build and the in-image build do the same pipeline run. That is not an oversight: `.gcloudignore:20` excludes `context/chroma_db`, so whatever the workflow builds **cannot reach the image** — its value is *fail-fast*, ~3 minutes earlier, with the coverage table printed in the workflow log where a human reads it, instead of buried in Cloud Build output. It also exercises exactly the permission `TASK-06` granted, with the CI identity, before any build minutes are spent. If deploy latency ever matters more than that, the step to delete is the workflow one — the image build already guarantees coverage via the hard `verify_index_coverage.py` after the pipeline.
+
+Validation performed here (no CI run — that is `GATE-03`, and it deploys):
+
+```
+$ python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/deploy-publisher.yml'))"
+workflow OK, steps: 13        # ... 6 Copy packages · 7 Resolve token · 8 Build index · 9 Build image ...
+$ python3 -c "import yaml; d=yaml.safe_load(open('cloudbuild.yaml'))"
+cloudbuild OK: ['steps', 'images', 'availableSecrets', 'options', 'timeout']
+```
+
+`actionlint` is not installed in this environment, so the workflow was checked by YAML parse and step enumeration only; the run in `GATE-03` is the real validator. **Open risk carried into `GATE-03`:** `gcloud builds submit --config` from `working-directory: publisher` uploads `publisher/`, and Cloud Build's own default service account must hold `secretAccessor` for `availableSecrets` — §5.1 shows it does (`669258319971@cloudbuild.gserviceaccount.com`), which is also why adding `TASK-06`'s binding did not and should not change that path.
 
 ### Phase 4 — enforcement and cleanup
 
@@ -618,9 +712,9 @@ PHASE 2  Image fidelity                                          █████
   [~] GATE-02  docker run → contexts_indexed == contexts_expected  (command-level PASS; no Docker daemon here)
 
 PHASE 3  Automation                                             ░░░░░░░░░░   0%
-  [ ] TASK-06  IAM: secretAccessor for the deploy identity
-  [ ] TASK-07  scripts/build_context_index.sh + preflight
-  [ ] TASK-08  workflow step with masked token
+  [x] TASK-06  IAM: secretAccessor for the deploy identity  (DONE — binding applied, 3 principals; use proven in GATE-03)
+  [x] TASK-07  scripts/build_context_index.sh + preflight  (DONE — 163 s, 3/3, 420 chunks; 2 s fast-fail)
+  [x] TASK-08  workflow step with masked token  (DONE — 2 steps + cloudbuild.yaml; CI run is GATE-03)
   [ ] GATE-03  real deploy run → 3/3 with no local step
 
 PHASE 4  Enforcement and cleanup                                 ░░░░░░░░░░   0%
