@@ -64,14 +64,53 @@ jobs:
             ../semantic_layer/workspace \
             workspace/semantic_layer
 
+      - name: Resolve the MotherDuck token
+        env:
+          # The deploy identity (malloy-analytics-user@) holds secretAccessor on
+          # this one secret. Reading it here - instead of copying it into a
+          # GitHub secret - keeps one source of truth across rotation: the same
+          # secret version is mounted into the service via --set-secrets.
+          SECRET_NAME: motherduck-token
+        run: |
+          set -Eeuo pipefail
+          if ! TOKEN=$(gcloud secrets versions access latest \
+                --secret="$SECRET_NAME" --project "$PROJECT_ID"); then
+            echo "Cannot read secret ${SECRET_NAME}. Grant the deploy identity:" >&2
+            echo "  gcloud secrets add-iam-policy-binding ${SECRET_NAME} \\" >&2
+            echo "    --project ${PROJECT_ID} \\" >&2
+            echo "    --member serviceAccount:${GCP_SERVICE_ACCOUNT:-<deploy-sa>} \\" >&2
+            echo "    --role roles/secretmanager.secretAccessor" >&2
+            exit 1
+          fi
+          # Mask before anything can echo it; then hand it to later steps.
+          echo "::add-mask::${TOKEN}"
+          {
+            echo "MOTHERDUCK_TOKEN=${TOKEN}"
+          } >> "$GITHUB_ENV"
+
+      - name: Build the RAG context index
+        working-directory: publisher
+        run: |
+          chmod +x ./scripts/build_context_index.sh
+          # Stage 1 -> 2 -> 3 for every served package, into Chroma, then verify.
+          # No --fresh: the curated domain contexts must survive.  The script
+          # reads MOTHERDUCK_TOKEN from the environment (see the step above) and
+          # fails in seconds, with the gcloud command to run, if it cannot.
+          ./scripts/build_context_index.sh --config workspace/publisher.config.json
+
       - name: Build the Publisher image
         working-directory: publisher
         env:
           IMAGE: ${{ env.IMAGE_NAME }}:${{ steps.image.outputs.tag }}
         run: |
+          # Not --tag: the image build needs MOTHERDUCK_TOKEN as a build arg,
+          # which only a build config can pass. cloudbuild.yaml pulls it from
+          # Secret Manager via secretEnv, so it is in no substitution and in no
+          # layer of the image.
           gcloud builds submit \
             --project "$PROJECT_ID" \
-            --tag "$IMAGE" \
+            --config cloudbuild.yaml \
+            --substitutions=_IMAGE="$IMAGE" \
             --quiet \
             .
 
