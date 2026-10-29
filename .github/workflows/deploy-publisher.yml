@@ -118,6 +118,9 @@ jobs:
         env:
           IMAGE: ${{ env.IMAGE_NAME }}:${{ steps.image.outputs.tag }}
         run: |
+          # --startup-probe keeps traffic off a revision whose Stage 3 cannot answer for
+          # its index. /healthz is unusable: Google Frontend answers that exact path
+          # itself (404) before the request reaches the container, hence /context/healthz.
           gcloud run deploy "$SERVICE" \
             --project "$PROJECT_ID" \
             --image "$IMAGE" \
@@ -131,8 +134,23 @@ jobs:
             --cpu-boost \
             --timeout 600 \
             --port 5050 \
+            --startup-probe httpGet.path=/context/healthz,httpGet.port=5050,periodSeconds=5,timeoutSeconds=2,successThreshold=1,failureThreshold=24 \
             --set-secrets=MOTHERDUCK_TOKEN=motherduck-token:latest \
             --quiet
+
+      - name: Assert the revision probes /context/healthz
+        run: |
+          # A silently ignored --startup-probe would look exactly like a working one,
+          # so read the field back off the service instead of trusting the flag.
+          set -Eeuo pipefail
+          read -r PATH_ PROBE_PORT <<<"$(gcloud run services describe "$SERVICE" \
+            --project "$PROJECT_ID" --region "$REGION" \
+            --format='value(spec.template.spec.containers[0].startupProbe.httpGet.path, spec.template.spec.containers[0].startupProbe.httpGet.port)')"
+          echo "startup probe: path=${PATH_:-<none>} port=${PROBE_PORT:-<none>}"
+          [ "${PATH_:-}" = "/context/healthz" ] || {
+            echo "The startup probe is not configured on /context/healthz." >&2
+            exit 1
+          }
 
       - name: Route 100% of traffic to the new revision
         run: |
