@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jaffle Shop — Profitability</title>
+<style>
+  :root{
+    --brand:#2c3e50; --brand2:#9b59b6; --accent:#e74c3c;
+    --bg:#f4f6f8; --card:#ffffff; --border:#e3e8ee; --muted:#6b7683;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       background:var(--bg);color:#22303c;line-height:1.55}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
+  header h1{margin:0 0 4px;font-size:28px;color:var(--brand)}
+  header p{margin:0 0 16px;color:var(--muted);max-width:820px}
+  .badge{display:inline-block;padding:5px 12px;border-radius:999px;background:#e8f5e9;color:#1b5e20;
+         font-weight:600;font-size:13px;margin-bottom:18px}
+  .badge.loading{background:#e3f2fd;color:#0d47a1}
+  .badge.error{background:#fdecea;color:#b71c1c}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;
+       box-shadow:0 1px 3px rgba(20,40,70,.06)}
+  .kpi .lbl{font-size:12px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted)}
+  .kpi .val{font-size:22px;font-weight:700;margin-top:4px}
+  .kpi .sub{font-size:13px;color:var(--muted)}
+  .controls{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:22px;
+            display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;box-shadow:0 1px 3px rgba(20,40,70,.06)}
+  .ctl{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+  .ctl input,.ctl select{border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:14px;min-width:150px;
+                          color:#22303c;background:#fff}
+  .btn{border:1px solid var(--brand2);background:#fff;color:var(--brand2);border-radius:8px;padding:8px 14px;
+       font-size:14px;font-weight:600;cursor:pointer}
+  .btn:hover{background:var(--brand2);color:#fff}
+  .btn.ghost{border-color:var(--border);color:var(--muted)}
+  .btn.ghost:hover{background:var(--muted);color:#fff}
+  .spacer{flex:1}
+  .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;
+         box-shadow:0 1px 3px rgba(20,40,70,.06);min-width:0}
+  .panel.span2{grid-column:1 / -1}
+  .panel .hdr{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:10px}
+  .panel h3{margin:0;font-size:16px;color:var(--brand)}
+  .panel .hint{font-size:12px;color:var(--muted);text-align:right}
+  .chartwrap{position:relative;height:320px}
+  .chartwrap.tall{height:380px}
+  .chartwrap.short{height:260px}
+  .note{margin:10px 0 0;font-size:12.5px;color:var(--muted)}
+  .tablewrap{max-height:420px;overflow:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  thead th{position:sticky;top:0;background:#fafbfc;text-align:left;font-weight:600;color:var(--muted);
+           font-size:12px;text-transform:uppercase;letter-spacing:.3px;padding:8px 10px;border-bottom:1px solid var(--border)}
+  tbody td{padding:8px 10px;border-bottom:1px solid #f0f3f6}
+  tbody tr:last-child td{border-bottom:none}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.rate{font-weight:600}
+  .rate.low{color:#c0392b}
+  .rate.mid{color:#b9770e}
+  .rate.high{color:#1e8449}
+  .empty{padding:22px;text-align:center;color:var(--muted)}
+  .supply{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .supply div{background:#fafbfc;border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .supply .v{font-size:18px;font-weight:700}
+  .supply .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+  .substrip{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 18px;
+            margin-bottom:22px;font-size:13.5px;color:#33414e}
+  .substrip b{color:var(--brand)}
+  footer{margin-top:26px;font-size:12.5px;color:var(--muted);text-align:center}
+  .is-busy .panel{opacity:.55;transition:opacity .15s}
+  @media (max-width:820px){.grid{grid-template-columns:1fr}.chartwrap{height:280px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Jaffle Shop — where the margin actually is</h1>
+    <p>Revenue is easy to see; profit is not. Every order item carries a supply cost, and tax is collected on the
+      customer's behalf. Gross margin here is revenue minus supply cost, on two clearly separated bases:
+      <b>order-level</b> revenue includes tax, <b>item-level</b> revenue is pre-tax. No number on this page mixes the two.</p>
+  </header>
+
+  <div id="status" class="badge loading">Loading…</div>
+
+  <section class="controls">
+    <label class="ctl">Orders from
+      <input type="date" id="start" min="2016-09-01" max="2016-09-16" value="2016-09-01">
+    </label>
+    <label class="ctl">Orders to
+      <input type="date" id="end" min="2016-09-01" max="2016-09-16" value="2016-09-16">
+    </label>
+    <label class="ctl">Products shown
+      <select id="topn">
+        <option value="5">Top 5</option>
+        <option value="10" selected>All 10</option>
+      </select>
+    </label>
+    <div class="spacer"></div>
+    <button class="btn ghost" id="resetBtn" type="button">Reset</button>
+    <button class="btn" id="csvBtn" type="button">Download product table (CSV)</button>
+  </section>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="substrip" id="substrip">Loading item-level totals…</div>
+
+  <div class="grid" id="grid">
+    <section class="panel span2">
+      <div class="hdr"><h3>Margin by product</h3><span class="hint">item-level, pre-tax · dollars</span></div>
+      <div class="chartwrap tall"><canvas id="chartProduct"></canvas></div>
+      <p class="note">Selling often and earning well are different things: compare this to the volume view below.</p>
+    </section>
+
+    <section class="panel">
+      <div class="hdr"><h3>Margin rate by product type</h3><span class="hint">item-level</span></div>
+      <div class="chartwrap short"><canvas id="chartType"></canvas></div>
+      <p class="note" id="typeNote">Axis does not start at zero.</p>
+    </section>
+
+    <section class="panel">
+      <div class="hdr"><h3>Rate against volume</h3><span class="hint">bubble = margin dollars</span></div>
+      <div class="chartwrap short"><canvas id="chartVolume"></canvas></div>
+      <p class="note">Bottom-right is the expensive corner: plenty of items, little rate left on them.</p>
+    </section>
+
+    <section class="panel span2">
+      <div class="hdr"><h3>Product detail</h3><span class="hint">sorted by margin dollars</span></div>
+      <div class="tablewrap">
+        <table id="productTable">
+          <thead>
+            <tr>
+              <th>Product</th><th>Type</th>
+              <th class="num">Items</th><th class="num">Revenue</th>
+              <th class="num">Supply cost</th><th class="num">Margin</th><th class="num">Rate</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="hdr"><h3>Margin per order by basket size</h3><span class="hint">order-level, incl. tax</span></div>
+      <div class="chartwrap short"><canvas id="chartBasket"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <div class="hdr"><h3>Food and drink mix</h3><span class="hint">order-level, incl. tax</span></div>
+      <div class="chartwrap short"><canvas id="chartMix"></canvas></div>
+    </section>
+
+    <section class="panel">
+      <div class="hdr"><h3>New vs returning</h3><span class="hint">rate, axis does not start at zero</span></div>
+      <div class="chartwrap short"><canvas id="chartCustomers"></canvas></div>
+      <p class="note" id="customerNote"></p>
+    </section>
+
+    <section class="panel">
+      <div class="hdr"><h3>Supply base</h3><span class="hint">not date-filtered</span></div>
+      <div class="supply" id="supply"></div>
+      <p class="note">Unit costs are small and mostly perishable — the cost side is a many-small-decisions problem, not a few large ones.</p>
+    </section>
+
+    <section class="panel span2">
+      <div class="hdr"><h3>Daily margin rate against revenue</h3><span class="hint">order-level, incl. tax</span></div>
+      <div class="chartwrap"><canvas id="chartTrend"></canvas></div>
+      <p class="note">A moving revenue line does not move the rate: the rate is flat while volume swings.</p>
+    </section>
+  </div>
+
+  <footer>Jaffle Shop · Malloy Publisher data app · every number comes from <code>cafe_bridge_explore</code></footer>
+</div>
+
+<script src="/sdk/publisher.js"></script>
+<script src="vendor/chart.umd.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
