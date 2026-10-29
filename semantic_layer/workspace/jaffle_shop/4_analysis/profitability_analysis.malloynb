@@ -1,0 +1,189 @@
+>>>markdown
+# Jaffle Shop — Profitability
+
+Revenue is easy to see. Profit is not. Jaffle Shop rings up jaffles and drinks, and every order item carries a
+supply cost — the ingredients it took to make it. Tax is collected on the customer's behalf, so the money that
+actually matters is what is left after supplies.
+
+This notebook asks where gross margin is created, where it leaks, and whether the answer changes by product,
+by product type, by basket, by customer, or by day.
+
+**Working definition.** Gross margin = revenue − supply cost. Two revenue bases are used and always labelled:
+*order-level* revenue is what the customer paid including tax, *item-level* revenue is pre-tax. Item-level is the
+honest base for a per-item margin; order-level is the honest base for a per-order one. No ratio here mixes the two.
+
+**Query surface.** Every cell below goes through `cafe_bridge_explore`, the package's curated Unified Star
+Schema explore, with `Stage` pinned to one table per query. One import, one surface: the data app built on this
+notebook reads the same explore and the same measures, so the two cannot drift.
+>>>malloy
+import "../3_explores/cafe_bridge_explore.malloy"
+>>>markdown
+## 1. How much of each dollar of revenue survives supply cost?
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  aggregate:
+    orders is cafe_orders.Order_Count
+    revenue is cafe_orders.Total_Revenue
+    tax_paid is cafe_orders.Total_Tax_Paid
+    supply_cost is cafe_orders.Total_Order_Cost
+    margin is cafe_orders.Gross_Margin
+    margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+}
+>>>markdown
+Item-level revenue is the same business, measured before tax on the items themselves. If the two margin rates
+disagree, the difference is either tax (which is not profit) or an order-level allocation.
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_order_items'
+  aggregate:
+    items is cafe_order_items.Order_Item_Count
+    revenue is cafe_order_items.Item_Revenue
+    supply_cost is cafe_order_items.Total_Supply_Cost
+    margin is cafe_order_items.Item_Gross_Margin
+    margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+}
+>>>markdown
+## 2. Which products carry the margin — and which only look valuable because they sell often?
+>>>malloy
+# bar_chart
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_order_items'
+  group_by: product is cafe_order_items.Product_name
+  aggregate: margin is cafe_order_items.Item_Gross_Margin
+  order_by: margin desc
+}
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_order_items'
+  group_by:
+    type is cafe_order_items.cafe_products.Product_type
+    product is cafe_order_items.Product_name
+  aggregate:
+    items is cafe_order_items.Order_Item_Count
+    revenue is cafe_order_items.Item_Revenue
+    supply_cost is cafe_order_items.Total_Supply_Cost
+    margin is cafe_order_items.Item_Gross_Margin
+    margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+  order_by: margin desc
+}
+>>>markdown
+## 3. Does the menu mix explain the margin rate, or only the volume?
+>>>malloy
+# bar_chart
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_order_items'
+  group_by: type is cafe_order_items.cafe_products.Product_type
+  aggregate: margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+  order_by: margin_pct desc
+}
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_order_items'
+  group_by: type is cafe_order_items.cafe_products.Product_type
+  aggregate:
+    items is cafe_order_items.Order_Item_Count
+    margin is cafe_order_items.Item_Gross_Margin
+    share_of_margin is cafe_order_items.Item_Gross_Margin / all(cafe_order_items.Item_Gross_Margin)
+    margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+  order_by: margin desc
+}
+>>>markdown
+## 4. Is a bigger basket a better basket?
+>>>malloy
+# bar_chart
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  group_by: items_in_order is cafe_orders.Count_order_items
+  aggregate: margin_per_order is cafe_orders.Gross_Margin / cafe_orders.Order_Count
+  order_by: items_in_order
+}
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  group_by: items_in_order is cafe_orders.Count_order_items
+  aggregate:
+    orders is cafe_orders.Order_Count
+    revenue is cafe_orders.Total_Revenue
+    margin is cafe_orders.Gross_Margin
+    margin_per_order is cafe_orders.Gross_Margin / cafe_orders.Order_Count
+    margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+  order_by: items_in_order
+}
+>>>markdown
+## 5. What does the food-and-drink combination do to an order?
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  group_by:
+    has_food is cafe_orders.Is_food_order
+    has_drink is cafe_orders.Is_drink_order
+  aggregate:
+    orders is cafe_orders.Order_Count
+    revenue is cafe_orders.Total_Revenue
+    margin is cafe_orders.Gross_Margin
+    margin_per_order is cafe_orders.Gross_Margin / cafe_orders.Order_Count
+    margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+  order_by: margin desc
+}
+>>>markdown
+## 6. Do margin rates differ between new and returning customers, or only the volumes?
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  group_by: customer_type is cafe_customers.Customer_type
+  aggregate:
+    orders is cafe_orders.Order_Count
+    customers is cafe_customers.Customer_Count
+    revenue is cafe_orders.Total_Revenue
+    margin is cafe_orders.Gross_Margin
+    margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+    revenue_per_customer is cafe_orders.Total_Revenue / cafe_customers.Customer_Count
+  order_by: margin desc
+}
+>>>markdown
+## 7. Is the margin rate drifting, or is it flat under a moving revenue line?
+>>>malloy
+# line_chart
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  group_by: order_day is cafe_orders.Order_date
+  aggregate: margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+  order_by: order_day
+}
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  group_by: order_day is cafe_orders.Order_date
+  aggregate:
+    orders is cafe_orders.Order_Count
+    revenue is cafe_orders.Total_Revenue
+    margin is cafe_orders.Gross_Margin
+    margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+  order_by: order_day
+}
+>>>markdown
+## 8. Which products combine thin margin with real volume — where a price or cost change would matter most?
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_order_items'
+  group_by: product is cafe_order_items.Product_name
+  aggregate:
+    items is cafe_order_items.Order_Item_Count
+    revenue is cafe_order_items.Item_Revenue
+    margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+    margin is cafe_order_items.Item_Gross_Margin
+  order_by: items desc
+}
+>>>markdown
+## 9. What does the supply base itself look like?
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_supplies'
+  aggregate:
+    supplies is cafe_supplies.Supply_Count
+    total_supply_cost is cafe_supplies.Total_Supply_Cost
+    average_supply_cost is cafe_supplies.Average_Supply_Cost
+    perishable_supplies is cafe_supplies.Perishable_Supply_Count
+    perishable_rate is cafe_supplies.Perishable_Supply_Rate
+}
