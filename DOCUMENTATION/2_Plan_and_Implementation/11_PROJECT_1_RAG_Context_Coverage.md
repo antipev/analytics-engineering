@@ -1,7 +1,7 @@
 # Project 1 — RAG context coverage for every served Publisher package
 
 > **Date:** 2026-10-28
-> **Status:** Phase 0 **applied and validated** (4 files + 1 workflow step); **Phase 1 complete** — `TASK-01`/`TASK-02`/`TASK-03` applied, `GATE-01` **PASS** (repo truth `3/3`; local `malloy_getContext` returns 3 Section-Summary with `Total_Revenue` for all three packages). **Phase 2 complete** — `TASK-04` (idempotent build, verified in 5 build-context shapes) and `TASK-05` (`/context/healthz`) done; `GATE-02` is PASS at command level and **blocked on a Docker daemon** for the container half. **Phase 3 written** — `TASK-06` (IAM binding applied), `TASK-07` (`build_context_index.sh` green: 163 s, 3/3, 420 chunks) and `TASK-08` (token + index steps, `cloudbuild.yaml`) are done; `GATE-03` needs one real deploy run from `main`. Remaining: Phase 4 — `TASK-09` … `TASK-13`.
+> **Status:** Phase 0 **applied and validated**; **Phase 1 complete** — `GATE-01` **PASS** (repo truth `3/3`). **Phase 2 complete** — `TASK-04`, `TASK-05`; `GATE-02` PASS at command level, container half still blocked on a Docker daemon here. **Phase 3 complete** — `TASK-06`/`TASK-07`/`TASK-08` done and `GATE-03` **PASS** on the third run (`malloy-publisher-mcp-00035-tqq`: index step 3/3, in-image verify 3/3, deployed coverage 3/3, 3 sections and the money measures for all three packages over the public URL). Remaining: Phase 4 — `TASK-09` … `TASK-13`.
 > **Related:** [`6_PROJECT_1_Malloy_Semantic_Layer.md`](./6_PROJECT_1_Malloy_Semantic_Layer.md) — the semantic layer this context is built from. [`7_PROJECT_1_Credible_GitHub_Implementation.md`](./7_PROJECT_1_Credible_GitHub_Implementation.md) §9A — the Publisher publish automation. [`10_PROJECT_1_Dagster_CI_Deployment.md`](./10_PROJECT_1_Dagster_CI_Deployment.md) — the deployment pattern and task-tracking style reused here.
 > **Goal:** `malloy_getContext` returns a real 3-section RAG context, with the money measures, for **all three** served packages (`thelook_ecommerce`, `jaffle_shop`, `comics`) — and the deploy fails loudly if that ever regresses.
 > **Change budget:** one connection block in one JS file, one Dockerfile `RUN` line, one renamed route, one CI build step, one IAM binding, one repository variable. **No new services, no new repositories, no copies of the semantic layer.**
@@ -662,6 +662,50 @@ cloudbuild OK: ['steps', 'images', 'availableSecrets', 'options', 'timeout']
 
 `actionlint` is not installed in this environment, so the workflow was checked by YAML parse and step enumeration only; the run in `GATE-03` is the real validator. **Open risk carried into `GATE-03`:** `gcloud builds submit --config` from `working-directory: publisher` uploads `publisher/`, and Cloud Build's own default service account must hold `secretAccessor` for `availableSecrets` — §5.1 shows it does (`669258319971@cloudbuild.gserviceaccount.com`), which is also why adding `TASK-06`'s binding did not and should not change that path.
 
+#### `GATE-03` record (2026-10-28) — **PASS on the third attempt**, after three real bugs
+
+Three dispatched runs, two failures, each one a defect that no amount of local testing had surfaced. This is the gate earning its keep.
+
+**Attempt 1 (`40788177339`) — the checker lied about a measure that was present.**
+
+```
+[OK] workspace__thelook_ecommerce / comics / jaffle_shop
+✅ Indexed 205 / 112 / 195 chunks … Total chunks: 512
+❌ workspace__jaffle_shop  -> missing required measure(s): Total_Revenue, Gross_Margin
+```
+
+195 chunks for `jaffle_shop`, against 103 measured locally in `TASK-03`. Cause, found by reproducing the CI tree locally (`scripts/sync_semantic_layer.sh ../analytics-engineering/semantic_layer/workspace workspace/semantic_layer` + the same pipeline): **the canonical package changed shape upstream** in `bd6bd7f fix(jaffle_shop): … drop cafe_explore`. It is now a unified-star bridge — `2_refinements/bridge.malloy`, explore `cafe_bridge_explore`, every measure reached through a joined source — so Stage 2 writes `cafe_orders.Total_Revenue`, and `verify_index_coverage.py` compared whole normalized strings only and therefore called a present measure missing.
+
+Consequences, both recorded rather than smoothed over:
+
+- **`workspace/semantic_layer/` is gitignored and rsync'd from `analytics-engineering` by CI**, so the copy under `publisher/` is a build artifact. The copy used for the `TASK-01`/`GATE-01` measurements was the **pre-bridge** package: those numbers (103 chunks, 95 measures) describe a package that is no longer shipped. Re-measured on the canonical package: 195 chunks, 184 fields, `cafe_orders.Total_Revenue` and `cafe_orders.Gross_Margin` present in Section 1 *and* in the Section-3 template — so the money measures are still served, they are just qualified. The bug this project exists for (two packages with no context at all) is unchanged by the rename.
+- Fix (`f3b88055`): `resolve_required()` matches the whole field **or its final segment**, and the report now prints `(Total_Revenue -> cafe_orders.Total_Revenue)` so the qualification stays visible instead of being hidden by a lenient match. Negative case still fails: `--require jaffle_shop:Not_A_Measure` → exit 1. The committed Stage-1/2 artifacts were refreshed to the canonical shape (512 chunks total).
+
+**Attempt 2 (`40789317181`) — the build config was valid YAML and still wrong.**
+
+The index step went green (3/3, 512 chunks), then Cloud Build rejected the image step in 3 seconds:
+
+```
+ERROR: (gcloud.builds.submit) INVALID_ARGUMENT: invalid build:
+invalid secrets: secretEnv "MOTHERDUCK_TOKEN" is defined without being used
+```
+
+`availableSecrets` only *makes a secret available*; the step must also name it in `secretEnv`, which the first draft of `cloudbuild.yaml` did not. Nothing local could catch that: the file parses, and the failure lives in Cloud Build's own validation. Also measured in that run: the upload was `7995 file(s) totalling 643.8 MiB`, because `scripts/build_context_index.sh` had created `context/.venv-index` (513 MB) and neither `.gcloudignore` (`**/.venv/` only) nor `.dockerignore` (`context/.venv/` only) covered the new name — with `COPY context/ ./context/`, the venv would have been baked into the image as well as uploaded. Fix (`0e3d7c07`): `secretEnv: ['MOTHERDUCK_TOKEN']` on the step, and `**/.venv-index/` in both ignore files.
+
+**Attempt 3 (`40790026847`) — green end to end, no local step.**
+
+| Evidence | Value |
+|---|---|
+| workflow conclusion | `completed success` |
+| index step | `3/3 served package(s) have a RAG context` — 205 / 112 / 195 chunks, 512 total |
+| Cloud Build | `SUCCESS`, in-image `verify_index_coverage` prints `3/3` (205/185, 112/108, 195/184) |
+| revision | `malloy-publisher-mcp-00035-tqq`, 100% of traffic |
+| workflow coverage step | `✅ thelook 19507 chars · comics 6857 · jaffle_shop 17665 — 3-section context returned`, `3/3` |
+| `GET /context/healthz` (public) | `200` · `contexts_preloaded 3 · contexts_expected 3 · contexts_indexed 3 · missing []` |
+| independent harness `/tmp/g03_gate.py <service-url>` | `GATE-03: PASS (3/3)` — 3/3 sections, 184/108/185 Section-1 fields, `Total_Revenue` + `Gross_Margin` in Section 1 and Section 3 for `jaffle_shop` |
+
+Two side notes. The harness had to be pointed at `/context/healthz`: production still answers `/healthz` with Google's 404, which confirms §6 outside any doubt and is the first production use of the `TASK-05` route. And `TASK-06`'s acceptance is now behavioural as well as documentary — the token step resolved the secret as `malloy-analytics-user@` on all three runs, which is exactly the proof that could not be produced locally.
+
 ### Phase 4 — enforcement and cleanup
 
 | ID | Task | Files | Acceptance | Effort | Status |
@@ -715,7 +759,7 @@ PHASE 3  Automation                                             ░░░░░�
   [x] TASK-06  IAM: secretAccessor for the deploy identity  (DONE — binding applied, 3 principals; use proven in GATE-03)
   [x] TASK-07  scripts/build_context_index.sh + preflight  (DONE — 163 s, 3/3, 420 chunks; 2 s fast-fail)
   [x] TASK-08  workflow step with masked token  (DONE — 2 steps + cloudbuild.yaml; CI run is GATE-03)
-  [ ] GATE-03  real deploy run → 3/3 with no local step
+  [x] GATE-03  real deploy run → 3/3 with no local step  (PASS on attempt 3 — rev 00035-tqq; 3 bugs found and fixed)
 
 PHASE 4  Enforcement and cleanup                                 ░░░░░░░░░░   0%
   [ ] TASK-09  ENFORCE_CONTEXT_COVERAGE=true
