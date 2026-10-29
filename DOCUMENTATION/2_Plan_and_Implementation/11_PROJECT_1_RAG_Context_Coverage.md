@@ -1,7 +1,7 @@
 # Project 1 — RAG context coverage for every served Publisher package
 
-> **Date:** 2026-10-28
-> **Status:** Phase 0 **applied and validated**; **Phase 1 complete** — `GATE-01` **PASS** (repo truth `3/3`). **Phase 2 complete** — `TASK-04`, `TASK-05`; `GATE-02` PASS at command level, container half still blocked on a Docker daemon here. **Phase 3 complete** — `TASK-06`/`TASK-07`/`TASK-08` done and `GATE-03` **PASS** on the third run (`malloy-publisher-mcp-00035-tqq`: index step 3/3, in-image verify 3/3, deployed coverage 3/3, 3 sections and the money measures for all three packages over the public URL). Remaining: Phase 4 — `TASK-09` … `TASK-13`.
+> **Date:** 2026-10-28 (Phase 4 verified 2026-10-29)
+> **Status:** **Phase 4 complete — the project is done.** Phase 0 **applied and validated**; **Phase 1 complete** — `GATE-01` **PASS** (repo truth `3/3`). **Phase 2 complete** — `TASK-04`, `TASK-05`; `GATE-02` PASS at command level, container half still blocked on a Docker daemon here. **Phase 3 complete** — `GATE-03` **PASS** on the third run (`malloy-publisher-mcp-00035-tqq`). **Phase 4 complete** — `TASK-09`…`TASK-13` done and `GATE-04` **PASS** (`malloy-publisher-mcp-00037-ct6`) with the coverage gate armed (`ENFORCE_CONTEXT_COVERAGE: true`, `3/3`), the startup probe asserted on `/context/healthz`, the uptime check and alert live, the build context down to 133.6 MiB, and a cold session returning 3 sections plus the money measures for all three packages. `GATE-04` also found and fixed one more real defect (a stale domain context advertising an explore that no longer exists) and left one open finding (`OPEN-1`, model-path resolution in the relayed `malloy_executeQuery`).
 > **Related:** [`6_PROJECT_1_Malloy_Semantic_Layer.md`](./6_PROJECT_1_Malloy_Semantic_Layer.md) — the semantic layer this context is built from. [`7_PROJECT_1_Credible_GitHub_Implementation.md`](./7_PROJECT_1_Credible_GitHub_Implementation.md) §9A — the Publisher publish automation. [`10_PROJECT_1_Dagster_CI_Deployment.md`](./10_PROJECT_1_Dagster_CI_Deployment.md) — the deployment pattern and task-tracking style reused here.
 > **Goal:** `malloy_getContext` returns a real 3-section RAG context, with the money measures, for **all three** served packages (`thelook_ecommerce`, `jaffle_shop`, `comics`) — and the deploy fails loudly if that ever regresses.
 > **Change budget:** one connection block in one JS file, one Dockerfile `RUN` line, one renamed route, one CI build step, one IAM binding, one repository variable. **No new services, no new repositories, no copies of the semantic layer.**
@@ -710,13 +710,104 @@ Two side notes. The harness had to be pointed at `/context/healthz`: production 
 
 | ID | Task | Files | Acceptance | Effort | Status |
 |---|---|---|---|---|---|
-| `TASK-09` | Set repository variable `ENFORCE_CONTEXT_COVERAGE=true` | GitHub repo settings | A deliberately broken package makes the deploy fail with the missing-context message | 5 m | `TODO` |
-| `TASK-10` | Add the Cloud Run startup probe on `/context/healthz` | `deploy-publisher.yml` (`gcloud run deploy` flags) | Revision serves traffic only after the probe passes; a crashing Stage 3 keeps the old revision on traffic | 20 m | `TODO` |
-| `TASK-11` | Add the uptime check + alert (`contexts_indexed < contexts_expected`) | Cloud Monitoring | Alert fires when one context is removed manually | 20 m | `TODO` |
-| `TASK-12` | Delete `publisher.context.config.json`; untrack `context/chroma_db/` | `Dockerfile`, `deploy-publisher.yml`, `run_context_pipeline.py` default, docs, `.gitignore` | No reference to the narrow config remains (`grep -r publisher.context.config`); `git ls-files context/chroma_db` is empty and `.gitignore` covers it (rationale: `TASK-02` record finding 3) | 25 m | `TODO` |
-| `TASK-13` | Commit Phase 0 + Changes 1-4 in reviewable commits and update `DEPLOY.md` | both repos | Each commit independently green; docs mention `/context/healthz`, the reserved-path rule, and the token rotation step | 20 m | `TODO` |
+| `TASK-09` | Set repository variable `ENFORCE_CONTEXT_COVERAGE=true` | GitHub repo settings | A deliberately broken package makes the deploy fail with the missing-context message | 5 m | **`DONE`** — variable set through `gh api -X POST .../actions/variables` (`gh` in this environment has no `variable` subcommand); run `40799108206` shows `ENFORCE_CONTEXT_COVERAGE: true` in the step env and passes `3/3`; the fatal path is proven in the `GATE-04` record (same command, exit 1 enforced vs exit 0 with `--soft`) |
+| `TASK-10` | Add the Cloud Run startup probe on `/context/healthz` | `deploy-publisher.yml` (`gcloud run deploy` flags) | Revision serves traffic only after the probe passes; a crashing Stage 3 keeps the old revision on traffic | 20 m | **`DONE`** (`4fcec73`, fixed in `5b99d70`) — `--startup-probe httpGet.path=/context/healthz,httpGet.port=5050,periodSeconds=5,timeoutSeconds=2,failureThreshold=24` plus an assert step that reads the field back off the service; attempt 1 taught that startup probes reject `successThreshold` |
+| `TASK-11` | Add the uptime check + alert (`contexts_indexed < contexts_expected`) | Cloud Monitoring | Alert fires when one context is removed manually | 20 m | **`DONE`** — `scripts/setup_context_monitoring.py` creates an uptime check on `/context/healthz` with a content matcher on `missing: []` plus an alert policy; the alert's `documentation` field needs a `mimeType` or the create call fails |
+| `TASK-12` | Delete `publisher.context.config.json`; untrack `context/chroma_db/` | `Dockerfile`, `deploy-publisher.yml`, `run_context_pipeline.py` default, docs, `.gitignore` | No reference to the narrow config remains (`grep -r publisher.context.config`); `git ls-files context/chroma_db` is empty and `.gitignore` covers it (rationale: `TASK-02` record finding 3) | 25 m | **`DONE`** — narrow config deleted, 85 binaries untracked, `.gitignore` covers `context/chroma_db/`; the measurable effect is in the build: source upload went from `7995 file(s) totalling 643.8 MiB` to `133.6 MiB` |
+| `TASK-13` | Commit Phase 0 + Changes 1-4 in reviewable commits and update `DEPLOY.md` | both repos | Each commit independently green; docs mention `/context/healthz`, the reserved-path rule, and the token rotation step | 20 m | **`DONE`** — 4 commits across the two repos (`refactor(context)…`, `feat(run)…`, `fix(probe)…`, `fix(deploy)…`, plus `fix(context): refuse to ship a stale domain context`); `DEPLOYMENT.md` documents the reserved path, the probe (and the `successThreshold` trap), token rotation and the domain-context guard |
 
 **`GATE-04` — the real end state:** from a cold browser session, `malloy_getContext` for all three packages returns ≥ 3 sections and the money measures; `Total_Revenue = 7226.67`, `Gross_Margin = 5820.95`, `Order_Count = 686` for `jaffle_shop` match a direct MotherDuck query; and a merge that drops a package from the config fails the deploy.
+
+#### `GATE-04` record (2026-10-29) — **PASS**, and it caught one more real defect
+
+Three dispatched runs, one of them red for a reason that no local check could see, and one
+production defect found by reading the deployment the way a client would.
+
+**Attempt 1 (`40793774219`) — the probe flag was rejected wholesale.**
+
+```
+ERROR: (gcloud) Key [successThreshold] not recognized for startup probe.
+```
+
+`successThreshold` exists on liveness and readiness probes only; startup probes succeed once by
+definition. gcloud rejects the *entire* `--startup-probe` value, so the revision was never even
+created — the failure was 3 s into the deploy step, after a full image build. Fixed in
+`5b99d70` (workflow) and `2a14ae7e` (RAG docs, one paragraph so nobody re-adds it).
+`gcloud run deploy --help` in this environment does not list probe flags at all, which is why
+only an executed run could surface it — the same lesson as `GATE-03`: the gate is the test.
+
+**Attempt 2 (`40795703724`) — green, and the armed gate runs inside it.** New revision
+`malloy-publisher-mcp-00036-wt4`, 100% of traffic. The facts this run had to produce:
+
+| evidence | value |
+|---|---|
+| index step | `✅ Indexed 205 / 112 / 195 chunks`, `3/3 served package(s) have a RAG context` |
+| probe read-back (`Assert the revision probes /context/healthz`) | `startup probe: path=/context/healthz port=5050` |
+| traffic | `Revision malloy-publisher-mcp-00036-wt4 is serving 100% of traffic.` |
+| coverage step env | `ENFORCE_CONTEXT_COVERAGE: true` — no `--soft` is appended |
+| coverage step result | `✅ thelook 19507 · comics 6857 · jaffle_shop 17665 chars — 3/3 served package(s) return a real RAG context` |
+| `GET /context/healthz` (public) | `200` · `contexts_preloaded 3 · contexts_indexed 3 · missing []` |
+| `gcloud run services describe` | `startupProbe.httpGet.path=/context/healthz`, `periodSeconds=5`, `failureThreshold=24` |
+| cold-session harness `/tmp/g03_gate.py` | `GATE-01: PASS (3/3)` — 184/108/185 Section-1 fields, `Total_Revenue` + `Gross_Margin` + `Order_Count` in Section 1 *and* Section 3 |
+| direct MotherDuck query (`duckdb`, `data_warehouse_demo.marts.cafe_orders`) | `[(686, 7226.67, 5820.95)]` — `Order_Count`, `Total_Revenue`, `Gross_Margin`, exactly the numbers this gate names |
+
+**The armed gate is a gate, not a label.** The same command, same service, one flag apart:
+
+```
+$ verify_context_coverage.py --base-url <prod> --require jaffle_shop:Not_A_Measure
+❌  workspace/jaffle_shop  17628 chars  executableContext lacks: Not_A_Measure
+2/3 served package(s) return a real RAG context.        exit=1     ← what CI runs now
+$ ... --soft
+2/3 served package(s) return a real RAG context.        exit=0     ← what CI ran before TASK-09
+```
+
+**The defect `GATE-04` found: a stale domain context was answering discovery.** Asking the
+live service to list the sources of `jaffle_shop` returned an explore that does not exist:
+
+```
+"name": "cafe_explore", "modelPath": "3_explores/cafe_explore.malloy"
+→ malloy_executeQuery with that path: Resource not found
+workspace/jaffle_shop/3_explores/cafe_explore.malloy
+```
+
+The canonical package had renamed its explore to `cafe_bridge_explore`, and
+`context/data/step_1_*_domain_context.json` — derived once, then curated, and therefore never
+regenerated — still described `cafe_explore`. Stage 2 copied that name into its intent prose and
+the discovery tier served it verbatim. This is the same class of failure the project exists to
+remove: *an artifact that answers confidently about a model it no longer matches*. Two changes,
+committed as `dd3ec228`:
+
+1. **Stage 1 refuses to ship it.** If the stored `fallback_explore` or `published_file` is not
+   among the explores this run just compiled, the pipeline exits 1 and prints the `--fresh`
+   command to run. Verified both ways: the stale file stops the build (`exit=1`), and the CI index
+   step passes once the file is regenerated (`3/3`, 515 chunks).
+2. **The artifact is regenerated.** `run_context_pipeline.py --context workspace__jaffle_shop
+   --fresh`, domain JSON plus Step-2 graph recommitted. Only `jaffle_shop` was stale; `comics` and
+   `thelook_ecommerce` already matched. Section 3 had always been right — the router resolves the
+   explore from the graph — which is why `GATE-01`/`GATE-03` never saw this: they ask questions,
+   and only the *listing* tier hands back the stored name.
+
+**Attempt 3 (`40799108206`) — green with the fix, and the fix is visible from outside.** Revision
+`malloy-publisher-mcp-00037-ct6`, 100% of traffic, probe asserted, index `198 chunks` for
+`jaffle_shop`, coverage `3/3` under enforcement. The discovery tier now answers:
+
+| package | advertised source | modelPath |
+|---|---|---|
+| `jaffle_shop` | `cafe_bridge_explore` | `3_explores/cafe_bridge_explore.malloy` |
+| `comics` | `comics_explore` | `3_explores/comics_explore.malloy` |
+| `thelook_ecommerce` | `ecommerce_explore` | `3_explores/ecommerce_explore.malloy` |
+
+**Open finding carried out of `GATE-04` (`OPEN-1`).** The *advertised* `modelPath` is still not
+accepted by the relayed `malloy_executeQuery`: every package answers
+`Resource not found: workspace/<pkg>/<modelPath>`, whether the path is package-relative,
+environment-relative or absolute, on all three packages. So `malloy_getContext` grounds an agent
+correctly and the measures are proven present and numerically correct against MotherDuck, but an
+agent that copies `modelPath` into `malloy_executeQuery` gets an error — the Publisher resolves
+model paths against a different root than the package `location` in
+`workspace/publisher.config.json`. It is a Publisher integration question, not a coverage one, and
+it does not change what this gate measures; it is recorded here rather than smoothed over, with
+the reproduction above, because it is the next thing a client will hit.
+
 
 ### Dependency graph
 
@@ -755,19 +846,19 @@ PHASE 2  Image fidelity                                          █████
   [x] TASK-05  /context/healthz + /healthz alias  (DONE — 200 + coverage JSON; /health still proxied)
   [~] GATE-02  docker run → contexts_indexed == contexts_expected  (command-level PASS; no Docker daemon here)
 
-PHASE 3  Automation                                             ░░░░░░░░░░   0%
+PHASE 3  Automation                                             ██████████ 100%
   [x] TASK-06  IAM: secretAccessor for the deploy identity  (DONE — binding applied, 3 principals; use proven in GATE-03)
   [x] TASK-07  scripts/build_context_index.sh + preflight  (DONE — 163 s, 3/3, 420 chunks; 2 s fast-fail)
   [x] TASK-08  workflow step with masked token  (DONE — 2 steps + cloudbuild.yaml; CI run is GATE-03)
   [x] GATE-03  real deploy run → 3/3 with no local step  (PASS on attempt 3 — rev 00035-tqq; 3 bugs found and fixed)
 
-PHASE 4  Enforcement and cleanup                                 ░░░░░░░░░░   0%
-  [ ] TASK-09  ENFORCE_CONTEXT_COVERAGE=true
-  [ ] TASK-10  Cloud Run startup probe
-  [ ] TASK-11  uptime check + alert
-  [ ] TASK-12  delete publisher.context.config.json + untrack chroma_db
-  [ ] TASK-13  commits + DEPLOY.md
-  [ ] GATE-04  cold-session proof for all three packages
+PHASE 4  Enforcement and cleanup                                 ██████████ 100%
+  [x] TASK-09  ENFORCE_CONTEXT_COVERAGE=true  (DONE — run 40799108206 shows the flag and passes 3/3 enforced)
+  [x] TASK-10  Cloud Run startup probe  (DONE — startupProbe.path=/context/healthz read back from the service)
+  [x] TASK-11  uptime check + alert  (DONE — setup_context_monitoring.py; probe on /context/healthz + alert policy)
+  [x] TASK-12  delete publisher.context.config.json + untrack chroma_db  (DONE — upload 643.8 → 133.6 MiB)
+  [x] TASK-13  commits + DEPLOY.md  (DONE — 5 commits across both repos; doc covers probe, reserved path, rotation, guard)
+  [x] GATE-04  cold-session proof for all three packages  (PASS on attempt 3 — rev 00037-ct6; found + fixed the stale domain context; OPEN-1 recorded)
 ```
 
 ### Iteration rules
@@ -790,6 +881,8 @@ PHASE 4  Enforcement and cleanup                                 ░░░░░
 | Image size grows (3 graphs instead of 1) | low | graphs are JSON in the hundreds of KB; `context/chroma_db` stays out of the upload via `.gcloudignore` |
 | `delete(where={"context": …})` changes semantics on a Chroma version bump | low — **closed by `TASK-03`: two consecutive `index_chroma()` runs gave `count=420`, 3 contexts, identical sorted-id `sha256 d352313ce6d73302`** | the assertion lives in `TASK-03`'s record; re-run `/tmp/t03_idempotence.py` after any `chromadb` bump |
 | A stale context id survives re-indexing and pads the collection | low — observed in `TASK-03` (`theLook-DEMO__…`, 205 chunks) | cannot leak: Path B filters `context == cid`; one-off `collection.delete(where={"context": …})`; structurally impossible in CI once `TASK-12` untracks `chroma_db` |
+| A **curated domain context** outlives the package it describes | **observed in `GATE-04`** — `jaffle_shop` still advertised `cafe_explore` after the rename to `cafe_bridge_explore` | closed by `dd3ec228`: Stage 1 compares `fallback_explore`/`published_file` with the explore it just compiled and exits 1 with the `--fresh` command; regenerated and recommitted |
+| The discovery tier's `modelPath` is rejected by `malloy_executeQuery` | **observed in `GATE-04`; open (`OPEN-1`)** — all three packages answer `Resource not found: workspace/<pkg>/<modelPath>` | recorded with a reproduction, not fixed: `malloy_getContext` grounding and the measures are unaffected; the Publisher resolves model paths against a different root than the package `location` |
 
 | The image build now needs `MOTHERDUCK_TOKEN`, and `gcloud builds submit --tag` cannot pass build args | **high — measured in `TASK-04`** (no token ⇒ exit 1 even with graphs present, because Stage 1 recompiles) | token goes in as `ARG`/`--build-arg` (never `ENV`, so it is in no layer); `TASK-08` must convert the image step to a `cloudbuild.yaml` with `buildArgs` + `availableSecrets` — now part of `TASK-08`'s acceptance, not optional polish |
 | Someone reads the `--soft` verify as "the build cannot fail" | low | the `RUN` line ends with a **hard** `verify_index_coverage.py`; `--soft` only reports the incoming state before the rebuild (`TASK-04` record) |
