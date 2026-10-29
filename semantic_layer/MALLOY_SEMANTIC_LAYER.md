@@ -161,6 +161,8 @@ started by `wsl.exe`, not by an interactive shell. See
 `DOCUMENTATION/2_Plan_and_Implementation/9_PROJECT_1_Malloy WSL.md` for the full
 root-cause analysis.
 
+Notebook cells (`.malloynb`) need one more local setting, because the extension cannot map a `vscode-notebook-cell:` URI back to the repository config: set `"malloy.globalConfigDirectory": "~/analytics-engineering"` in `.vscode/settings.json` (git-ignored). It is used only as a fallback, so `.malloy` files keep discovering the tracked `malloy-config.json`. See `DOCUMENTATION/2_Plan_and_Implementation/12_PROJECT_1_Malloy_Notebooks_WSL.md`.
+
 A `malloy-config-local.json` with the literal token also works (Malloy merges it
 over the tracked file), but it duplicates the secret in a second file; the
 server hook keeps `.env` as the single source of truth.

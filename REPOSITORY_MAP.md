@@ -169,6 +169,7 @@ Every mart reads its `intermediate/int_cafe_*` counterpart and keeps the inherit
 - **`DOCUMENTATION/2_Plan_and_Implementation/2_PROJECT_1_PLAN.md`** — End-to-end build and operations plan, including the monthly scale-to-zero implementation, file inventory, economics, and live deployment evidence.
 - **`DOCUMENTATION/2_Plan_and_Implementation/3_PROJECT_1_Docker.md`** — Container and Cloud Run implementation notes, revision details, and deployment checks.
 - **`DOCUMENTATION/2_Plan_and_Implementation/4_PROJECT_1_Schedule.md`** — Authoritative design for scheduling, Litestream, the wake endpoint, dbt docs delivery, and alerting.
+- **`DOCUMENTATION/2_Plan_and_Implementation/12_PROJECT_1_Malloy_Notebooks_WSL.md`** — Why `.malloynb` cells in the WSL window could not resolve the `motherduck` connection (extension config discovery skips notebook-cell URIs), the `malloy.globalConfigDirectory` fix, its local/publisher safety audit, and the rewritten `profitability_analysis.malloynb`.
 - **`DOCUMENTATION/analytics-architecture-v5/`** — Source of the version 5 architecture diagram: the React component tree, the `analytics-architecture-v5.svg`/`.png` exports, `isolated-domains-v5.png`, `ICONS.md`, `design.md`, and `README.md` notes on the export and the hosted app. Only the SVG copy in `PICTURES/` is versioned.
 
 ## Generated and local-only files

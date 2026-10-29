@@ -1,50 +1,75 @@
 >>>markdown
-# Jaffle Shop — Profitability
+# Jaffle Shop — where the profit actually is
 
-Revenue is easy to see. Profit is not. Jaffle Shop rings up jaffles and drinks, and every order item carries a
-supply cost — the ingredients it took to make it. Tax is collected on the customer's behalf, so the money that
-actually matters is what is left after supplies.
+September 2016, one cafe, **686 orders in 16 days** (1–16 Sep). Everything here is gross margin = revenue − supply cost: no rent, no wages, no card fees. The percentages are therefore optimistic, and only comparable with each other.
 
-This notebook asks where gross margin is created, where it leaks, and whether the answer changes by product,
-by product type, by basket, by customer, or by day.
+Two levels, never mixed:
 
-**Working definition.** Gross margin = revenue − supply cost. Two revenue bases are used and always labelled:
-*order-level* revenue is what the customer paid including tax, *item-level* revenue is pre-tax. Item-level is the
-honest base for a per-item margin; order-level is the honest base for a per-order one. No ratio here mixes the two.
+| level | revenue | tax | supply cost | margin | margin % |
+|---|---|---|---|---|---|
+| order (what the customer paid) | 7,226.67 | 408.67 | 1,405.72 | 5,820.95 | 80.5 % |
+| item (pre-tax product lines) | 6,818.00 | — | 1,405.72 | 5,412.28 | 79.4 % |
 
-**Query surface.** Every cell below goes through `cafe_bridge_explore`, the package's curated Unified Star
-Schema explore, with `Stage` pinned to one table per query. One import, one surface: the data app built on this
-notebook reads the same explore and the same measures, so the two cannot drift.
+Every chart is followed by its conclusion in plain words. Section 10 turns the conclusions into what to sell more of, with the arithmetic attached.
+>>>malloy
+-- connection: motherduck
 >>>malloy
 import "../3_explores/cafe_bridge_explore.malloy"
 >>>markdown
-## 1. How much of each dollar of revenue survives supply cost?
+## 1 · The headline
+
+Two numbers set the scale: the till, then the products behind it.
+>>>malloy
+# big_value
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  aggregate:
+    orders is cafe_orders.Order_Count
+    revenue is cafe_orders.Total_Revenue
+    supply_cost is cafe_orders.Total_Order_Cost
+    margin is cafe_orders.Gross_Margin
+    margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+}
+>>>malloy
+# big_value
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_order_items'
+  aggregate:
+    items is cafe_order_items.Order_Item_Count
+    item_revenue is cafe_order_items.Item_Revenue
+    supply_cost is cafe_order_items.Total_Supply_Cost
+    margin is cafe_order_items.Item_Gross_Margin
+    margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+}
+>>>markdown
+**Conclusion.** The cafe keeps **80.5 %** of what it takes: 5,820.95 margin on 7,226.67 revenue from 686 orders — 10.53 per order. On the item side, 997 items made 6,818.00 of pre-tax revenue and 5,412.28 of margin (79.4 %). The 408.67 gap between the two margins is exactly the tax, and supply cost (1,405.72) is identical in both views, so nothing is leaking between the levels. The item rate is 1.2 points lower only because tax is not in its revenue.
+
+---
+
+## 2 · The margin ladder
+
+The same 686 orders, opened up step by step.
 >>>malloy
 run: cafe_bridge_explore -> {
   where: Stage = 'cafe_orders'
   aggregate:
     orders is cafe_orders.Order_Count
     revenue is cafe_orders.Total_Revenue
-    tax_paid is cafe_orders.Total_Tax_Paid
+    tax is cafe_orders.Total_Tax_Paid
     supply_cost is cafe_orders.Total_Order_Cost
     margin is cafe_orders.Gross_Margin
     margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+    avg_order is cafe_orders.Average_Order_Value
+    avg_items is cafe_orders.Average_Items_per_Order
 }
 >>>markdown
-Item-level revenue is the same business, measured before tax on the items themselves. If the two margin rates
-disagree, the difference is either tax (which is not profit) or an order-level allocation.
->>>malloy
-run: cafe_bridge_explore -> {
-  where: Stage = 'cafe_order_items'
-  aggregate:
-    items is cafe_order_items.Order_Item_Count
-    revenue is cafe_order_items.Item_Revenue
-    supply_cost is cafe_order_items.Total_Supply_Cost
-    margin is cafe_order_items.Item_Gross_Margin
-    margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
-}
->>>markdown
-## 2. Which products carry the margin — and which only look valuable because they sell often?
+**Conclusion.** Read it bottom-up: 7,226.67 comes in, 408.67 of it is tax the cafe never keeps, 1,405.72 pays for supplies, 5,820.95 is left. An average order is **10.53 and 1.45 items** — in practice one drink with a snack, and often just the drink, because 72 % of orders never get a second item (section 5). Tax is 5.7 % of revenue and supply cost 19.5 %; there is no other cost in this model, which is why the rate looks so healthy.
+
+---
+
+## 3 · Which products carry the margin
+
+Chart 1 — margin in money, per product. Chart 2 — the same products by how often they sell and how well they pay. Chart 3 — both together, with the cost side.
 >>>malloy
 # bar_chart
 run: cafe_bridge_explore -> {
@@ -53,6 +78,20 @@ run: cafe_bridge_explore -> {
   aggregate: margin is cafe_order_items.Item_Gross_Margin
   order_by: margin desc
 }
+>>>markdown
+**Conclusion.** Five drinks do all the work: for richer or pourover 1,038.24, tangaroo 797.72, vanilla ice 713.60, adele-ade 556.05, chai and mighty 513.50 — **3,619.11 of the 5,412.28 item margin, 67 %**. The best jaffle, flame impala at 412.23, is a quarter of the best drink. This chart measures how often a product sells, not how good it is: the drinks sell 154–168 times each, the jaffles 36–43.
+>>>malloy
+# scatter_chart
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_order_items'
+  group_by: product is cafe_order_items.Product_name
+  aggregate:
+    items is cafe_order_items.Order_Item_Count
+    margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+  order_by: items desc
+}
+>>>markdown
+**Conclusion.** Two clean clusters and nothing in between: **five drinks at 154–168 items** (65.0–88.3 % margin) and **five jaffles at 36–43 items** (69.5–89.0 %). The rate spread is 24 points around a 78.6 % median. The best rates are the two smallest sellers by the same measure — nutellaphone who dis? 89.0 % and for richer or pourover 88.3 % — and the worst is chai and mighty at 65.0 %, which is also the **fourth most popular product in the shop**. That one dot is the most expensive thing on this chart: a best-seller earning the worst rate.
 >>>malloy
 run: cafe_bridge_explore -> {
   where: Stage = 'cafe_order_items'
@@ -65,16 +104,32 @@ run: cafe_bridge_explore -> {
     supply_cost is cafe_order_items.Total_Supply_Cost
     margin is cafe_order_items.Item_Gross_Margin
     margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+    margin_per_item is cafe_order_items.Item_Gross_Margin / cafe_order_items.Order_Item_Count
   order_by: margin desc
 }
 >>>markdown
-## 3. Does the menu mix explain the margin rate, or only the volume?
+**Conclusion.** The table is the shopping list, and it sorts the catalogue into three kinds of product:
+
+- **High volume, high rate — protect them.** for richer or pourover (168 items, 88.3 %, 1,038.24), tangaroo (154, 86.3 %, 797.72), adele-ade (165, 84.2 %, 556.05). Together 2,392.01, 44 % of item margin.
+- **High rate, low volume — promote them.** nutellaphone who dis? (37 items, 89.0 %) and mel-bun (36, 80.1 %): the two best rates in the shop, on the two least-sold jaffles in the catalogue.
+- **High volume, low rate — fix the cost.** chai and mighty: 158 items at 65.0 %, 3.25 of margin per item against 6.18 for the best drink.
+
+Watch the `margin_per_item` column: every jaffle earns 8.34–10.57 per item, every drink 3.25–6.18. The jaffle line is worth roughly twice as much per sale even though its rate is lower — that tension is the core of section 10.
+
+---
+
+## 4 · Category: percentage versus money
+
+The same trade-off, one level up.
 >>>malloy
 # bar_chart
 run: cafe_bridge_explore -> {
   where: Stage = 'cafe_order_items'
   group_by: type is cafe_order_items.cafe_products.Product_type
-  aggregate: margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+  aggregate:
+    margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+    margin is cafe_order_items.Item_Gross_Margin
+    items is cafe_order_items.Order_Item_Count
   order_by: margin_pct desc
 }
 >>>malloy
@@ -83,20 +138,31 @@ run: cafe_bridge_explore -> {
   group_by: type is cafe_order_items.cafe_products.Product_type
   aggregate:
     items is cafe_order_items.Order_Item_Count
+    revenue is cafe_order_items.Item_Revenue
+    supply_cost is cafe_order_items.Total_Supply_Cost
     margin is cafe_order_items.Item_Gross_Margin
-    share_of_margin is cafe_order_items.Item_Gross_Margin / all(cafe_order_items.Item_Gross_Margin)
     margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
+    avg_price is cafe_order_items.Average_Item_Price
+    margin_per_item is cafe_order_items.Item_Gross_Margin / cafe_order_items.Order_Item_Count
   order_by: margin desc
 }
 >>>markdown
-## 4. Is a bigger basket a better basket?
+**Conclusion.** Beverage: 805 items, 5.60 each, 4,510.00 revenue, 3,619.11 margin, **80.25 %**. Jaffle: 192 items, 12.02 each, 2,308.00 revenue, 1,793.17 margin, **77.69 %**.
+
+The drink wins the percentage by 2.6 points. The jaffle wins the money by 2.1×: **9.34 of margin per jaffle against 4.50 per drink**. Food is 19 % of the items and 33 % of the margin. So "which is more profitable?" has two honest answers — by rate, drinks; by cash per sale, food — and the cash answer is the one that pays the bills. A 2.6-point rate advantage on a 5.60 item cannot compete with a 12.02 ticket.
+
+---
+
+## 5 · What a bigger basket buys
+
+Chart 1 — margin per order by basket size. Then the counts behind it.
 >>>malloy
 # bar_chart
 run: cafe_bridge_explore -> {
   where: Stage = 'cafe_orders'
   group_by: items_in_order is cafe_orders.Count_order_items
   aggregate: margin_per_order is cafe_orders.Gross_Margin / cafe_orders.Order_Count
-  order_by: items_in_order
+  order_by: margin_per_order desc
 }
 >>>malloy
 run: cafe_bridge_explore -> {
@@ -108,10 +174,29 @@ run: cafe_bridge_explore -> {
     margin is cafe_orders.Gross_Margin
     margin_per_order is cafe_orders.Gross_Margin / cafe_orders.Order_Count
     margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+    avg_order is cafe_orders.Average_Order_Value
   order_by: items_in_order
 }
 >>>markdown
-## 5. What does the food-and-drink combination do to an order?
+**Conclusion.** **495 of 686 orders — 72 % — are a single item**, and they earn 4.98 each. Two items: 12.22. Three: 21.18. Ten: 76.12. The rate moves by less than three points across every basket size (78.5–81.3 %), so a bigger basket does not earn a better percentage, it earns **more of the same percentage**. The 191 multi-item orders are 28 % of the count but 58 % of revenue (4,186.61) and 58 % of margin.
+
+Two facts for later: the basket to grow is the one-item basket, because there are 495 of them; and the biggest jump in the table is the first one, 4.98 → 12.22, i.e. +7.24 for a second item.
+
+---
+
+## 6 · Food and drink in the same basket
+
+Chart 1 — the margin rate of each mix. Chart 2 — what each mix is worth per order.
+>>>malloy
+# bar_chart
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  group_by:
+    has_food is cafe_orders.Is_food_order
+    has_drink is cafe_orders.Is_drink_order
+  aggregate: margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+  order_by: margin_pct desc
+}
 >>>malloy
 run: cafe_bridge_explore -> {
   where: Stage = 'cafe_orders'
@@ -123,11 +208,30 @@ run: cafe_bridge_explore -> {
     revenue is cafe_orders.Total_Revenue
     margin is cafe_orders.Gross_Margin
     margin_per_order is cafe_orders.Gross_Margin / cafe_orders.Order_Count
+    revenue_per_order is cafe_orders.Total_Revenue / cafe_orders.Order_Count
     margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
   order_by: margin desc
 }
 >>>markdown
-## 6. Do margin rates differ between new and returning customers, or only the volumes?
+**Conclusion.** **552 orders (80 %) are drink-only and earn 5.48 each.** The 117 that pair food with a drink earn **21.72 — four times as much** — on a 27.15 ticket instead of 6.74. Food-only is rare (17 orders) and still earns 15.12.
+
+Note which way the two charts disagree: by rate, drink-only is the *best* group (81.3 %), food-only the worst (77.8 %); by money, the food orders are worth four drink orders. Anyone optimising the percentage would kill the food line. Only 17 % of orders take both food and a drink, and that is the biggest gap in this notebook.
+
+---
+
+## 7 · New versus returning
+
+Chart 1 — the rate per customer type. Chart 2 — the counts and the money.
+>>>malloy
+# bar_chart
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  group_by: customer_type is cafe_customers.Customer_type
+  aggregate:
+    margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+    revenue is cafe_orders.Total_Revenue
+  order_by: margin_pct desc
+}
 >>>malloy
 run: cafe_bridge_explore -> {
   where: Stage = 'cafe_orders'
@@ -135,14 +239,23 @@ run: cafe_bridge_explore -> {
   aggregate:
     orders is cafe_orders.Order_Count
     customers is cafe_customers.Customer_Count
+    orders_per_customer is cafe_orders.Order_Count / cafe_customers.Customer_Count
     revenue is cafe_orders.Total_Revenue
     margin is cafe_orders.Gross_Margin
     margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
     revenue_per_customer is cafe_orders.Total_Revenue / cafe_customers.Customer_Count
-  order_by: margin desc
+  order_by: revenue desc
 }
 >>>markdown
-## 7. Is the margin rate drifting, or is it flat under a moving revenue line?
+**Conclusion.** **118 returning customers placed 676 orders — 5.7 each — and produced 5,533.78 of the 5,820.95 margin, 95 %.** New customers: 10 people, 10 orders, 287.17, and 35.93 of revenue each against 58.20 for a regular.
+
+The rate is the same for both (80.6 % vs 79.9 %), so regulars are not more profitable per euro — there are just far more of them. In these 16 days the business was carried entirely by repeat visits; acquisition contributed 1.5 % of orders and is too small to read as a trend.
+
+---
+
+## 8 · Is the margin rate drifting?
+
+Chart 1 — the rate per day. Chart 2 — revenue per day, the line that actually moves. Then the table.
 >>>malloy
 # line_chart
 run: cafe_bridge_explore -> {
@@ -152,6 +265,14 @@ run: cafe_bridge_explore -> {
   order_by: order_day
 }
 >>>malloy
+# line_chart
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_orders'
+  group_by: order_day is cafe_orders.Order_date
+  aggregate: revenue is cafe_orders.Total_Revenue
+  order_by: order_day
+}
+>>>malloy
 run: cafe_bridge_explore -> {
   where: Stage = 'cafe_orders'
   group_by: order_day is cafe_orders.Order_date
@@ -160,30 +281,94 @@ run: cafe_bridge_explore -> {
     revenue is cafe_orders.Total_Revenue
     margin is cafe_orders.Gross_Margin
     margin_pct is cafe_orders.Gross_Margin / cafe_orders.Total_Revenue
+    avg_order is cafe_orders.Average_Order_Value
   order_by: order_day
 }
 >>>markdown
-## 8. Which products combine thin margin with real volume — where a price or cost change would matter most?
+**Conclusion.** The rate is **flat**: 79.3–82.8 % across 16 days, mean 80.6 %, first half 80.7 % against second half 80.4 %. No day is structurally bad, so there is no pricing puzzle here — the rate is a property of the menu, not of the day.
+
+Revenue is the line that moves, 85.85 to 617.95 a day, and the order count explains almost all of it. The low days are weekends: Sat 3/10 and Sun 4/11 took 12–20 orders against 47–66 on weekdays. Weekends are quieter but richer — 18.84 and 23.64 per order on 4 and 10 Sep, against 8.58–11.35 midweek. Two readings matter for planning: midweek is a volume business of single drinks, weekends are a ticket business. 16 Sep is a part-day (10 orders) and is not a collapse.
+
+---
+
+## 9 · The supply base
+
+1,405.72 of the 7,226.67 revenue went into 65 supplies. This is where a low margin rate comes from.
 >>>malloy
-run: cafe_bridge_explore -> {
-  where: Stage = 'cafe_order_items'
-  group_by: product is cafe_order_items.Product_name
-  aggregate:
-    items is cafe_order_items.Order_Item_Count
-    revenue is cafe_order_items.Item_Revenue
-    margin_pct is cafe_order_items.Item_Gross_Margin / cafe_order_items.Item_Revenue
-    margin is cafe_order_items.Item_Gross_Margin
-  order_by: items desc
-}
->>>markdown
-## 9. What does the supply base itself look like?
->>>malloy
+# big_value
 run: cafe_bridge_explore -> {
   where: Stage = 'cafe_supplies'
   aggregate:
     supplies is cafe_supplies.Supply_Count
     total_supply_cost is cafe_supplies.Total_Supply_Cost
     average_supply_cost is cafe_supplies.Average_Supply_Cost
-    perishable_supplies is cafe_supplies.Perishable_Supply_Count
     perishable_rate is cafe_supplies.Perishable_Supply_Rate
 }
+>>>malloy
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_supplies'
+  group_by:
+    supply is cafe_supplies.Supply_name
+    perishable is cafe_supplies.Is_perishable_supply
+  aggregate:
+    uses is cafe_supplies.Supply_Count
+    total_supply_cost is cafe_supplies.Total_Supply_Cost
+    average_supply_cost is cafe_supplies.Average_Supply_Cost
+  order_by: total_supply_cost desc
+  limit: 12
+}
+>>>markdown
+**Conclusion.** 65 supplies, 18.76 of listed cost, 0.29 on average, and **46.2 % of them perishable** (30 of 65). The 12 costliest are 14.46 of that 18.76, and **9 of the 12 are food**: lamb and pork bratwurst 2.34, pulled pork 2.15, beef stew 1.69, bread 1.65 (only 0.33 per use, because five products share it), minced beef 1.24, coffee 1.04, chai mix 0.98, cheese 0.80, french vanilla syrup 0.72. The only non-perishables in the list are packaging at 0.11–0.13 per use: cup, straw, serving boat.
+
+Two consequences. Waste is a food problem, not a packaging problem — and bratwurst, pulled pork and beef stew are each tied to exactly **one** product, so a slow seller turns directly into spoiled stock. And the worst-margin product in section 3 has its cause here: chai mix at 0.98 is the second-costliest drink supply after coffee, on a 5.00 drink.
+
+---
+
+## 10 · What to sell more of
+
+One chart, then the answer. Profit per item sold is the number that decides what to push, because it is the money you keep each time somebody orders it.
+>>>malloy
+# bar_chart
+run: cafe_bridge_explore -> {
+  where: Stage = 'cafe_order_items'
+  group_by: product is cafe_order_items.Product_name
+  aggregate: margin_per_item is cafe_order_items.Item_Gross_Margin / cafe_order_items.Order_Item_Count
+  order_by: margin_per_item desc
+}
+>>>markdown
+**Conclusion of the chart.** Ranking by money per sale flips the ranking from section 3 completely. Every jaffle earns **8.34–10.57** per item; every drink earns **3.25–6.18**. flame impala (39 items) earns 10.57 per sale, for richer or pourover (168 items) earns 6.18. The best-seller by volume is only sixth by value per sale — which is exactly why "sell more of the top product" is the wrong first instinct.
+
+### What to sell more of, in order
+
+**1. A jaffle with every drink — worth about +515 per 10 % converted.**
+552 of 686 orders are drink-only at 5.48 margin; orders with food reach 21.72. One extra jaffle is worth 9.34. Converting 10 % of those 552 orders is 55 jaffles, **+515 margin (+8.8 %)**; 25 % is +1,289 (+22 %). Nothing else in this data pays four figures.
+
+**2. The two strongest drinks — about +180 per 10 % more volume.**
+for richer or pourover (1,038.24, 88.3 %, 168 items) and tangaroo (797.72, 86.3 %, 154) carry 34 % of item margin. Ten percent more of each is 17 and 15 extra items: +104 and +80. They are already the top sellers, so this is about never running out, keeping them visible, and never discounting them.
+
+**3. Fix chai and mighty's cost — +107 with no extra sales at all.**
+158 items at 65.0 % against a 78.6 % median. At the same 5.00 price and the median rate the item would earn 3.93 instead of 3.25: **+107 across the same 158 sales**. The cause is in section 9 — chai mix at 0.98. Renegotiate it, use less of it, or raise the price by 0.35; do not drop the product, because it is the fourth best-seller in the shop.
+
+**4. Sell food generally, not just drinks.**
+192 food items already provide 33 % of margin. Food's rate is 2.6 points lower but its ticket is 2.1× larger, so every "food dilutes our margin %" argument costs real money. One more jaffle sold is worth about 2.4 drinks.
+
+**5. Weekends for bundles, weekdays for add-ons.**
+Weekend orders are few (9–20 a day) and large (18.84–23.64 per order); weekday orders are many (47–66 a day) and small (8.58–11.35). So on Sat/Sun sell a bundle at a fixed price to the customer who is already spending 20; midweek, chase the second item, because 72 % of those orders are one lone drink worth 4.98 against 12.22 for two.
+
+**6. Give the two high-rate jaffles a slot.**
+nutellaphone who dis? (89.0 %, 37 items, 9.79 per item) and mel-bun (80.1 %, 36, 9.61) are the best rates in the shop and the two least-sold jaffles. They need no price change and no new supply — just a place on the board. Each extra 10 a fortnight is about 96 of margin.
+
+**7. Keep the 118 regulars.**
+They are 95 % of the margin and 98.5 % of the orders. New customers were 10 people in 16 days: there is no acquisition story in this dataset, only a retention one, and the cheapest profit here is the customer who already comes 5.7 times a fortnight.
+
+**Do not add those numbers together.** Points 1, 2, 4, 5 and 6 are the same demand seen from different angles, and overlap heavily — 1 and 5b are the same 552 orders. Point 3 is a cost fix, not a sales one.
+
+---
+
+### What this analysis cannot tell you
+
+- **Margin is not profit.** There is no rent, wages, card fees or marketing in the model. 80.5 % is a gross margin on supplies only.
+- **Supply cost is per-use list cost, not spend.** Waste, spoilage and bulk discounts are invisible, so the perishable risk in section 9 is a warning, not a measurement.
+- **16 days, one cafe, September 2016.** 16 Sep is a part-day. Weekend conclusions rest on four days (3, 4, 10, 11 Sep).
+- **Group differences are observed, not proven.** Orders with food earn 4× a drink-only order, but a hungry group might cause both the food and the bigger ticket. The safe reading is "food orders are bigger", not "food causes +16.24".
+- **No competitor, weather or promotion data,** so nothing here can say why a day was quiet.
