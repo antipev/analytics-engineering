@@ -134,7 +134,7 @@ jobs:
             --cpu-boost \
             --timeout 600 \
             --port 5050 \
-            --startup-probe httpGet.path=/context/healthz,httpGet.port=5050,periodSeconds=5,timeoutSeconds=2,successThreshold=1,failureThreshold=24 \
+            --startup-probe httpGet.path=/context/healthz,httpGet.port=5050,periodSeconds=5,timeoutSeconds=2,failureThreshold=24 \
             --set-secrets=MOTHERDUCK_TOKEN=motherduck-token:latest \
             --quiet
 
