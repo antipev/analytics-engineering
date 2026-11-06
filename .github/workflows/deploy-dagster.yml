@@ -252,6 +252,16 @@ jobs:
             || { echo "wake API route missing or not enforcing X-Wake-Secret" >&2; exit 1; }
           echo "[assert] /server_info 200, /dbt-docs/ 200, /wake/status 401 (route wired)"
 
+          # Scale-to-zero is part of the service contract, and a console "Edit & Deploy New
+          # Revision" copies the previous revision's value, so minScale can drift with no
+          # script involved. Read it back instead of trusting the deploy flags.
+          MIN_SCALE="$(describe 'spec.template.metadata.annotations."autoscaling.knative.dev/minScale"')"
+          if [ -n "$MIN_SCALE" ] && [ "$MIN_SCALE" != "0" ]; then
+            echo "minimum instances is ${MIN_SCALE}, expected 0 (scale-to-zero)" >&2
+            exit 1
+          fi
+          echo "[assert] minimum instances 0 (scale-to-zero)"
+
       - name: Summary
         if: always()
         run: |
