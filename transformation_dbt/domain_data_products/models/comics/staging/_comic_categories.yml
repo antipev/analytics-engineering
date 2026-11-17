@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: stg_comics_categories
+    description: >
+      Static primary-topic category list suggested by DeepSeek from all comics.
+      Run explicitly, review the result, then leave this model disabled.
+    config:
+      enabled: "{{ env_var('DBT_DISCOVER_COMIC_CATEGORIES', 'false') | lower == 'true' }}"
+      materialized: table
+      schema: staging
+      tags: [manual_ai]
+    columns:
+      - name: category_id
+        description: Slug derived from category_name; primary key.
+        tests:
+          - not_null
+          - unique
+      - name: category_name
+        description: Display name of the category, e.g. 'Gaming'.
+        tests:
+          - not_null
+          - unique
+      - name: definition
+        description: One sentence that disambiguates the neighbouring categories.
+        tests:
+          - not_null
+
+# Phase 2 reads the persisted table as a source, not as a ref to a disabled model.
+sources:
+  - name: comic_taxonomy
+    schema: staging
+    tables:
+      - name: categories
+        identifier: stg_comics_categories
+        description: Reviewed category list; created only on demand.

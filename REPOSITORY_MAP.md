@@ -93,6 +93,8 @@ This map inventories the repository's tracked files and the local-only or genera
 - **`transformation_dbt/domain_data_products/models/comics/marts/_comics.yml`** — Documents the comics mart and tests key uniqueness/non-null plus the calendar relationship.
 - **`transformation_dbt/domain_data_products/models/comics/marts/calendar.sql`** — Table model that calls `calendar_macro` for 2006-01-01 through the current date.
 - **`transformation_dbt/domain_data_products/models/comics/marts/_calendar.yml`** — Documents the calendar dimension and tests its date key.
+- **`transformation_dbt/domain_data_products/models/comics/staging/stg_comics_categories.py`** — Manual, flag-gated Python model (`DBT_DISCOVER_COMIC_CATEGORIES=true`) that asks DeepSeek for a 6–10 row primary-topic taxonomy over all comics, trims over-long or surplus LLM output before validating it, and writes nothing until the final call returns. Disabled by default, so no scheduled run ever selects it.
+- **`transformation_dbt/domain_data_products/models/comics/staging/_comic_categories.yml`** — Documents `stg_comics_categories`, gates it behind the env flag, and tests category id/name uniqueness and non-null definitions. Also declares the reviewed table as the `comic_taxonomy.categories` source for Phase 2.
 
 ### Jaffle Shop staging models
 
@@ -158,6 +160,7 @@ Every mart reads its `intermediate/int_cafe_*` counterpart and keeps the inherit
 - **`.github/workflows/bump-package-versions.yml`** — Reusable version-bump job that detects changed packages and commits the new `publisher.json` versions.
 - **`.github/workflows/deploy-publisher.yml`** — After a successful publish, rebuilds the Publisher image from `analytics-malloy-publisher-rag`, deploys it to Cloud Run, routes 100% of traffic to the new revision, and runs the smoke test.
 - **`scripts/bump_versions.py`, `scripts/detect_changed_packages.py`, `scripts/cred_publish.sh`** — Helper scripts used by the publish workflows.
+- **`scripts/test_comic_category_discovery.py`** — Offline regression check for the category-discovery model: exercises the truncation, dedupe, `Other / unclear` fallback, and 10-category cap, plus the `include_raw` parse-failure path, against recorded DeepSeek answers. Makes zero API calls and exits non-zero on regression.
 
 ## Local documentation (not versioned)
 
@@ -170,6 +173,7 @@ Every mart reads its `intermediate/int_cafe_*` counterpart and keeps the inherit
 - **`DOCUMENTATION/2_Plan_and_Implementation/3_PROJECT_1_Docker.md`** — Container and Cloud Run implementation notes, revision details, and deployment checks.
 - **`DOCUMENTATION/2_Plan_and_Implementation/4_PROJECT_1_Schedule.md`** — Authoritative design for scheduling, Litestream, the wake endpoint, dbt docs delivery, and alerting.
 - **`DOCUMENTATION/2_Plan_and_Implementation/12_PROJECT_1_Malloy_Notebooks_WSL.md`** — Why `.malloynb` cells in the WSL window could not resolve the `motherduck` connection (extension config discovery skips notebook-cell URIs), the `malloy.globalConfigDirectory` fix, its local/publisher safety audit, and the rewritten `profitability_analysis.malloynb`.
+- **`DOCUMENTATION/2_Plan_and_Implementation/13_PROJECT_1_Comics_Classification.md`** — Phase 1 of comics classification: the six-step plan and status, the seven pre-conditions and their measured evidence, eight decisions (D1–D8) including the validation failures that the supplied code did not survive, the paid-run history, and the `APPROVED` review gate for the 10 category rows.
 - **`DOCUMENTATION/analytics-architecture-v5/`** — Source of the version 5 architecture diagram: the React component tree, the `analytics-architecture-v5.svg`/`.png` exports, `isolated-domains-v5.png`, `ICONS.md`, `design.md`, and `README.md` notes on the export and the hosted app. Only the SVG copy in `PICTURES/` is versioned.
 
 ## Generated and local-only files
