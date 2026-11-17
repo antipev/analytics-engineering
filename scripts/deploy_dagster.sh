@@ -70,7 +70,7 @@ gcloud run deploy "$SERVICE" --quiet \
   --port=8080 \
   --concurrency=200 \
   --set-env-vars="DAGSTER_HOME=/tmp/dagster_home,DAGSTER_R2_BUCKET=${BUCKET},DAGSTER_R2_PREFIX=${PREFIX},AWS_REGION=auto,MOTHERDUCK_DATABASE=data_warehouse_demo,WAKE_TIMEOUT_SECONDS=1500,WAKE_POLL_INTERVAL_SECONDS=10,DAGSTER_GRAPHQL_URL=http://127.0.0.1:3000/graphql,DAGSTER_INGESTION_JOB=comics_ingestion_job,DAGSTER_TRANSFORMATION_JOB=comics_transformation_job" \
-  --set-secrets="MOTHERDUCK_TOKEN=motherduck-token:latest,R2_ACCOUNT_ID=r2-account-id:latest,R2_ACCESS_KEY_ID=r2-access-key-id:latest,R2_SECRET_ACCESS_KEY=r2-secret-access-key:latest,WAKE_SHARED_SECRET=wake-shared-secret:latest"
+  --set-secrets="MOTHERDUCK_TOKEN=motherduck-token:latest,R2_ACCOUNT_ID=r2-account-id:latest,R2_ACCESS_KEY_ID=r2-access-key-id:latest,R2_SECRET_ACCESS_KEY=r2-secret-access-key:latest,WAKE_SHARED_SECRET=wake-shared-secret:latest,DEEPSEEK_API_KEY=deepseek-api-key:latest"
 
 # `gcloud run deploy` leaves an existing traffic pin in place, still exits 0 and even
 # prints the pinned revision as "serving 100 percent", so after a

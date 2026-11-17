@@ -81,6 +81,9 @@ jobs:
           dbt deps
           dbt parse --target duckdb_dev --profiles-dir .
 
+      # 9 dbt/ingestion assets + 1 manual-only taxonomy asset = 10 assets;
+      # 4 domain jobs + comic_category_taxonomy_job = 5 jobs (that job has no
+      # schedule on purpose: the taxonomy costs money and overwrites reviewed data).
       - name: Load the Dagster definitions
         working-directory: ingestion/orchestration_dagster
         env:
@@ -92,9 +95,25 @@ jobs:
           definitions = defs()
           counts = (len(definitions.assets), len(definitions.jobs), len(definitions.schedules))
           print(f"assets={counts[0]} jobs={counts[1]} schedules={counts[2]}")
-          if counts != (9, 4, 1):
+          if counts != (10, 5, 1):
               raise SystemExit(f"unexpected definition counts: {counts}")
+
+          # The paid, non-deterministic taxonomy refresh must never be reachable from
+          # the monthly domain jobs. Group membership is the whole guard, so assert it.
+          def keys_of(job_name):
+              job = next(j for j in definitions.jobs if j.name == job_name)
+              return {key.to_user_string() for key in job.selection.resolve(definitions.assets)}
+
+          monthly = keys_of("comics_transformation_job")
+          manual = keys_of("comic_category_taxonomy_job")
+          if manual != {"comic_category_taxonomy"}:
+              raise SystemExit(f"manual job selects unexpected assets: {sorted(manual)}")
+          overlap = monthly & manual
+          if overlap:
+              raise SystemExit(f"manual assets leaked into comics_transformation_job: {sorted(overlap)}")
+          print(f"comics_transformation_job={sorted(monthly)}, manual isolation ok")
           PY
+
 
   deploy:
     needs: validate
